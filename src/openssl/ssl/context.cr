@@ -1,3 +1,5 @@
+require "uri/punycode"
+
 abstract class OpenSSL::SSL::Context
   # :nodoc:
   def self.default_method
@@ -72,6 +74,9 @@ abstract class OpenSSL::SSL::Context
     # context = OpenSSL::SSL::Context::Client.new
     # context.add_options(OpenSSL::SSL::Options::NO_SSL_V2 | OpenSSL::SSL::Options::NO_SSL_V3)
     # ```
+
+    @hostname : String?
+
     def initialize(method : LibSSL::SSLMethod = Context.default_method)
       super(method)
 
@@ -85,8 +90,28 @@ abstract class OpenSSL::SSL::Context
     #
     # For everything else this uses the defaults of your OpenSSL.
     # Use this only if undoing the defaults that `new` sets is too much hassle.
-    def self.insecure(method : LibSSL::SSLMethod = Context.default_method)
+    def self.insecure(method : LibSSL::SSLMethod = Context.default_method) : self
       super(method)
+    end
+
+    # Configures a client context from a hash-like interface.
+    #
+    # ```
+    # require "openssl"
+    #
+    # context = OpenSSL::SSL::Context::Client.from_hash({"key" => "private.key", "cert" => "certificate.crt", "ca" => "ca.pem"})
+    # ```
+    #
+    # Params:
+    #
+    # * `key` *(required)*: Path to private key file. See `#private_key=`.
+    # * `cert` *(required)*: Path to the file containing the public certificate chain. See `#certificate_chain=`.
+    # * `verify_mode`: Either `peer`, `force-peer`, `none` or empty (default: `peer`). See `verify_mode=`.
+    # * `ca`: Path to a file containing the CA certificate chain or a directory containing all CA certificates.
+    #    See `#ca_certificates=` and `#ca_certificates_path=`, respectively.
+    #    Required if `verify_mode` is `peer`, `force-peer` or empty.
+    def self.from_hash(params) : self
+      super(params)
     end
 
     # Wraps the original certificate verification to also validate the
@@ -95,6 +120,9 @@ abstract class OpenSSL::SSL::Context
     #
     # Required for OpenSSL <= 1.0.1 only.
     protected def set_cert_verify_callback(hostname : String)
+      # Sanitize the hostname with PunyCode
+      hostname = URI::Punycode.to_ascii hostname
+
       # Keep a reference so the GC doesn't collect it after sending it to C land
       @hostname = hostname
       LibSSL.ssl_ctx_set_cert_verify_callback(@handle, ->(x509_ctx, arg) {
@@ -140,8 +168,28 @@ abstract class OpenSSL::SSL::Context
     #
     # For everything else this uses the defaults of your OpenSSL.
     # Use this only if undoing the defaults that `new` sets is too much hassle.
-    def self.insecure(method : LibSSL::SSLMethod = Context.default_method)
+    def self.insecure(method : LibSSL::SSLMethod = Context.default_method) : self
       super(method)
+    end
+
+    # Configures a server from a hash-like interface.
+    #
+    # ```
+    # require "openssl"
+    #
+    # context = OpenSSL::SSL::Context::Client.from_hash({"key" => "private.key", "cert" => "certificate.crt", "ca" => "ca.pem"})
+    # ```
+    #
+    # Params:
+    #
+    # * `key` *(required)*: Path to private key file. See `#private_key=`.
+    # * `cert` *(required)*: Path to the file containing the public certificate chain. See `#certificate_chain=`.
+    # * `verify_mode`: Either `peer`, `force-peer`, `none` or empty (default: `none`). See `verify_mode=`.
+    # * `ca`: Path to a file containing the CA certificate chain or a directory containing all CA certificates.
+    #    See `#ca_certificates=` and `#ca_certificates_path=`, respectively.
+    #    Required if `verify_mode` is `peer` or `force-peer`.
+    def self.from_hash(params) : self
+      super(params)
     end
   end
 
@@ -361,5 +409,45 @@ abstract class OpenSSL::SSL::Context
 
   def to_unsafe
     @handle
+  end
+
+  private def self.from_hash(params)
+    context = new
+    if key = params["key"]?
+      context.private_key = key
+    else
+      raise ArgumentError.new("Invalid SSL context: missing private key ('key=')")
+    end
+
+    if cert = params["cert"]?
+      context.certificate_chain = cert
+    else
+      raise ArgumentError.new("Invalid SSL context: missing certificate ('cert=')")
+    end
+
+    case verify_mode = params["verify_mode"]?
+    when "peer"
+      context.verify_mode = OpenSSL::SSL::VerifyMode::PEER
+    when "force-peer"
+      context.verify_mode = OpenSSL::SSL::VerifyMode::FAIL_IF_NO_PEER_CERT
+    when "none"
+      context.verify_mode = OpenSSL::SSL::VerifyMode::NONE
+    when nil
+      # use default
+    else
+      raise ArgumentError.new("Invalid SSL context: unknown verify mode #{verify_mode.inspect}")
+    end
+
+    if ca = params["ca"]?
+      if File.directory?(ca)
+        context.ca_certificates_path = ca
+      else
+        context.ca_certificates = ca
+      end
+    elsif context.verify_mode.peer? || context.verify_mode.fail_if_no_peer_cert?
+      raise ArgumentError.new("Invalid SSL context: missing CA certificate ('ca=')")
+    end
+
+    context
   end
 end

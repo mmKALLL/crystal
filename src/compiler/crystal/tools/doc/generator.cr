@@ -163,7 +163,8 @@ class Crystal::Doc::Generator
   end
 
   def nodoc?(str : String?)
-    str == ":nodoc:" || str == "nodoc"
+    return false unless str
+    str.starts_with?(":nodoc:") || str.starts_with?("nodoc")
   end
 
   def nodoc?(obj)
@@ -360,7 +361,13 @@ class Crystal::Doc::Generator
     filename[@base_dir.size..-1]
   end
 
-  record RelativeLocation, filename : String, line_number : Int32, url : String? do
+  class RelativeLocation
+    property show_line_number
+    getter filename, line_number, url
+
+    def initialize(@filename : String, @line_number : Int32, @url : String?, @show_line_number : Bool)
+    end
+
     def to_json(builder : JSON::Builder)
       builder.object do
         builder.field "filename", filename
@@ -369,6 +376,7 @@ class Crystal::Doc::Generator
       end
     end
   end
+
   SRC_SEP = "src#{File::SEPARATOR}"
 
   def relative_locations(type)
@@ -386,7 +394,19 @@ class Crystal::Doc::Generator
       filename = filename[1..-1] if filename.starts_with? File::SEPARATOR
       filename = filename[4..-1] if filename.starts_with? SRC_SEP
 
-      locations << RelativeLocation.new(filename, location.line_number, url)
+      # Prevent identical link generation in the "Defined in:" section in the docs because of macros
+      next if locations.any? { |loc| loc.filename == filename && loc.line_number == location.line_number }
+
+      show_line_number = locations.any? do |location|
+        if location.filename == filename
+          location.show_line_number = true
+          true
+        else
+          false
+        end
+      end
+
+      locations << RelativeLocation.new(filename, location.line_number, url, show_line_number)
     end
     locations
   end

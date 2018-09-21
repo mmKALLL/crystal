@@ -83,6 +83,14 @@ abstract class OpenSSL::SSL::Socket < IO
     unless @ssl
       raise OpenSSL::Error.new("SSL_new")
     end
+
+    # Since OpenSSL::SSL::Socket is buffered it makes no
+    # sense to wrap a IO::Buffered with buffering activated.
+    if io.is_a?(IO::Buffered)
+      io.sync = false
+      io.read_buffering = false
+    end
+
     @bio = BIO.new(io)
     LibSSL.ssl_set_bio(@ssl, @bio, @bio)
   end
@@ -106,6 +114,8 @@ abstract class OpenSSL::SSL::Socket < IO
 
   def unbuffered_write(slice : Bytes)
     check_open
+
+    return if slice.empty?
 
     count = slice.size
     bytes = LibSSL.ssl_write(@ssl, slice.pointer(count), count)

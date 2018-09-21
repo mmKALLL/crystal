@@ -1,5 +1,3 @@
-{% if Crystal::VERSION.includes?("0.24.2+") || Crystal::VERSION == "0.25.0" %}
-
 require "spec"
 require "json"
 require "big"
@@ -14,12 +12,14 @@ end
 
 class JSONAttrEmptyClass
   include JSON::Serializable
+
   def initialize; end
 end
 
 class JSONAttrEmptyClassWithUnmapped
   include JSON::Serializable
   include JSON::Serializable::Unmapped
+
   def initialize; end
 end
 
@@ -32,6 +32,16 @@ class JSONAttrPerson
   def_equals name, age
 
   def initialize(@name : String)
+  end
+end
+
+struct JSONAttrPersonWithTwoFieldInInitialize
+  include JSON::Serializable
+
+  property name : String
+  property age : Int32
+
+  def initialize(@name, @age)
   end
 end
 
@@ -271,13 +281,20 @@ class JSONAttrModuleTest
   property foo = 15
 
   def initialize; end
-  def to_tuple; {@moo, @foo}; end
+
+  def to_tuple
+    {@moo, @foo}
+  end
 end
 
 class JSONAttrModuleTest2 < JSONAttrModuleTest
   property bar : Int32
+
   def initialize(@bar : Int32); end
-  def to_tuple; {@moo, @foo, @bar}; end
+
+  def to_tuple
+    {@moo, @foo, @bar}
+  end
 end
 
 struct JSONAttrPersonWithYAML
@@ -345,6 +362,12 @@ describe "JSON mapping" do
   it "parses array of people" do
     people = Array(JSONAttrPerson).from_json(%([{"name": "John"}, {"name": "Doe"}]))
     people.size.should eq(2)
+  end
+
+  it "works with class with two fields" do
+    person1 = JSONAttrPersonWithTwoFieldInInitialize.from_json(%({"name": "John", "age": 30}))
+    person2 = JSONAttrPersonWithTwoFieldInInitialize.new("John", 30)
+    person1.should eq person2
   end
 
   it "does to_json" do
@@ -705,11 +728,11 @@ describe "JSON mapping" do
     end
 
     it "defines query getter with class restriction" do
-      \{% begin %}
-        \{% methods = JSONAttrWithQueryAttributes.methods \%}
-        \{{ methods.find(&.name.==("foo?")).return_type }}.should eq(Bool)
-        \{{ methods.find(&.name.==("bar?")).return_type }}.should eq(Bool)
-      \{% end \%}
+      {% begin %}
+        {% methods = JSONAttrWithQueryAttributes.methods %}
+        {{ methods.find(&.name.==("foo?")).return_type }}.should eq(Bool)
+        {{ methods.find(&.name.==("bar?")).return_type }}.should eq(Bool)
+      {% end %}
     end
 
     it "defines non-query setter and presence methods" do
@@ -788,5 +811,3 @@ describe "JSON mapping" do
     JSONAttrPersonWithYAMLInitializeHook.from_yaml(person.to_yaml).msg.should eq "Hello Vasya"
   end
 end
-
-{% end %}

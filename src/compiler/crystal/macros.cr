@@ -34,12 +34,24 @@ module Crystal::Macros
   def flag?(name) : BoolLiteral
   end
 
-  # Prints an AST node at compile-time. Useful for debugging macros.
-  def puts(expression) : Nop
+  # Prints AST nodes at compile-time. Useful for debugging macros.
+  def puts(*expressions) : Nop
   end
 
   # Same as `puts`.
-  def p(expression) : Nop
+  def p(*expressions) : Nop
+  end
+
+  # Same as `puts`.
+  def pp(*expressions) : Nop
+  end
+
+  # Prints macro expressions together with their values at compile-time. Useful for debugging macros.
+  def p!(*expressions) : Nop
+  end
+
+  # Same as `p!`
+  def pp!(*expressions) : Nop
   end
 
   # Executes a system command and returns the output as a `MacroId`.
@@ -610,6 +622,18 @@ module Crystal::Macros
     def []=(index : NumberLiteral, value : ASTNode)
     end
 
+    # Similar to `Array#unshift`.
+    def unshift : ArrayLiteral
+    end
+
+    # Similar to `Array#push`.
+    def push(value : ASTNode) : ArrayLiteral
+    end
+
+    # Similar to `Array#<<`.
+    def <<(value : ASTNode) : ArrayLiteral
+    end
+
     # Similar to `Array#+`.
     def +(other : ArrayLiteral) : ArrayLiteral
     end
@@ -1038,6 +1062,10 @@ module Crystal::Macros
     def block_arg : Arg | Nop
     end
 
+    # Returns `true` if this method can be called with a block, `false` otherwise.
+    def accepts_block? : BoolLiteral
+    end
+
     # Returns the return type of the method, if specified.
     def return_type : ASTNode | Nop
     end
@@ -1254,6 +1282,16 @@ module Crystal::Macros
 
     # Returns the named arguments of this instantiation, if any.
     def named_args : NamedTupleLiteral | NilLiteral
+    end
+
+    # Resolves this generic to a `TypeNode` if it denotes a type,
+    # or otherwise gives a compile-time error.
+    def resolve : ASTNode
+    end
+
+    # Resolves this path to a `TypeNode` if it denotes a type,
+    # or otherwise returns a `NilLiteral`.
+    def resolve? : ASTNode | NilLiteral
     end
   end
 

@@ -52,6 +52,10 @@ module Crystal::System::FileDescriptor
     arg
   end
 
+  private def system_closed?
+    LibC.fcntl(@fd, LibC::F_GETFL) == -1
+  end
+
   def self.fcntl(fd, cmd, arg = 0)
     r = LibC.fcntl(fd, cmd, arg)
     raise Errno.new("fcntl() failed") if r == -1
@@ -81,19 +85,19 @@ module Crystal::System::FileDescriptor
   end
 
   private def system_tty?
-    LibC.isatty(fd) == 1
+    LibC.isatty(@fd) == 1
   end
 
   private def system_reopen(other : IO::FileDescriptor)
     {% if LibC.methods.includes? "dup3".id %}
       # dup doesn't copy the CLOEXEC flag, so copy it manually using dup3
       flags = other.close_on_exec? ? LibC::O_CLOEXEC : 0
-      if LibC.dup3(other.fd, self.fd, flags) == -1
+      if LibC.dup3(other.@fd, @fd, flags) == -1
         raise Errno.new("Could not reopen file descriptor")
       end
     {% else %}
       # dup doesn't copy the CLOEXEC flag, copy it manually to the new
-      if LibC.dup2(other.fd, self.fd) == -1
+      if LibC.dup2(other.@fd, @fd) == -1
         raise Errno.new("Could not reopen file descriptor")
       end
 
@@ -101,6 +105,9 @@ module Crystal::System::FileDescriptor
         self.close_on_exec = true
       end
     {% end %}
+
+    # Mark the handle open, since we had to have dup'd a live handle.
+    @closed = false
 
     # We are now pointing to a new file descriptor, we need to re-register
     # events with libevent and enqueue readers and writers again.
@@ -139,5 +146,30 @@ module Crystal::System::FileDescriptor
     @write_event = nil
 
     reschedule_waiting
+  end
+
+  def self.pipe(read_blocking, write_blocking)
+    pipe_fds = uninitialized StaticArray(LibC::Int, 2)
+    if LibC.pipe(pipe_fds) != 0
+      raise Errno.new("Could not create pipe")
+    end
+
+    r = IO::FileDescriptor.new(pipe_fds[0], read_blocking)
+    w = IO::FileDescriptor.new(pipe_fds[1], write_blocking)
+    r.close_on_exec = true
+    w.close_on_exec = true
+    w.sync = true
+
+    {r, w}
+  end
+
+  def self.pread(fd, buffer, offset)
+    bytes_read = LibC.pread(fd, buffer, buffer.size, offset)
+
+    if bytes_read == -1
+      raise Errno.new "Error reading file"
+    end
+
+    bytes_read
   end
 end

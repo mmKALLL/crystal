@@ -13,6 +13,19 @@
 # response.body.lines.first # => "<!doctype html>"
 # ```
 #
+# ### Parameters
+#
+# Parameters can be added to any request with the `HTTP::Params#encode` method, which
+# converts a `Hash` or `NamedTuple` to a URL encoded HTTP query.
+#
+# ```
+# require "http/client"
+#
+# params = HTTP::Params.encode({"author" => "John Doe", "offset" => "20"}) # => author=John+Doe&offset=20
+# response = HTTP::Client.get "http://www.example.com?" + params
+# response.status_code # => 200
+# ```
+#
 # ### Streaming
 #
 # With a block, an `HTTP::Client::Response` body is returned and the response's body
@@ -562,6 +575,7 @@ class HTTP::Client
   end
 
   private def set_defaults(request)
+    request.headers["Host"] ||= host_header
     request.headers["User-Agent"] ||= "Crystal"
     {% if flag?(:without_zlib) %}
       false
@@ -573,6 +587,13 @@ class HTTP::Client
         false
       end
     {% end %}
+  end
+
+  # For one-shot headers we don't want keep-alive (might delay closing the response)
+  private def self.default_one_shot_headers(headers)
+    headers ||= HTTP::Headers.new
+    headers["Connection"] ||= "close"
+    headers
   end
 
   private def run_before_request_callbacks(request)
@@ -614,6 +635,7 @@ class HTTP::Client
   # response.body # => "..."
   # ```
   def self.exec(method, url : String | URI, headers : HTTP::Headers? = nil, body : BodyType = nil, tls = nil) : HTTP::Client::Response
+    headers = default_one_shot_headers(headers)
     exec(url, tls) do |client, path|
       client.exec method, path, headers, body
     end
@@ -628,6 +650,7 @@ class HTTP::Client
   # end
   # ```
   def self.exec(method, url : String | URI, headers : HTTP::Headers? = nil, body : BodyType = nil, tls = nil)
+    headers = default_one_shot_headers(headers)
     exec(url, tls) do |client, path|
       client.exec(method, path, headers, body) do |response|
         yield response
@@ -642,9 +665,7 @@ class HTTP::Client
   end
 
   private def new_request(method, path, headers, body : BodyType)
-    HTTP::Request.new(method, path, headers, body).tap do |request|
-      request.headers["Host"] ||= host_header
-    end
+    HTTP::Request.new(method, path, headers, body)
   end
 
   private def socket

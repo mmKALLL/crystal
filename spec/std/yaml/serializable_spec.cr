@@ -1,5 +1,3 @@
-{% if Crystal::VERSION.includes?("0.24.2+") || Crystal::VERSION == "0.25.0" %}
-
 require "spec"
 require "yaml"
 require "../../support/finalize"
@@ -10,12 +8,14 @@ end
 
 class YAMLAttrEmptyClass
   include YAML::Serializable
+
   def initialize; end
 end
 
 class YAMLAttrEmptyClassWithUnmapped
   include YAML::Serializable
   include YAML::Serializable::Unmapped
+
   def initialize; end
 end
 
@@ -28,6 +28,17 @@ class YAMLAttrPerson
   def_equals name, age
 
   def initialize(@name : String)
+  end
+end
+
+struct YAMLAttrPersonWithThreeFieldInInitialize
+  include YAML::Serializable
+
+  property name : String
+  property bla : Int32
+  property age : Int32
+
+  def initialize(@name, @bla, @age)
   end
 end
 
@@ -347,6 +358,12 @@ describe "YAML::Serializable" do
     people = Array(YAMLAttrPerson).from_yaml(yaml)
     people[0].name.should eq("foo")
     people[0].age.should eq(1)
+  end
+
+  it "works with class with three fields" do
+    person1 = YAMLAttrPersonWithThreeFieldInInitialize.from_yaml("---\nname: John\nbla: 1\nage: 30\n")
+    person2 = YAMLAttrPersonWithThreeFieldInInitialize.new("John", 1, 30)
+    person1.should eq person2
   end
 
   it "parses person with unknown attributes" do
@@ -730,11 +747,11 @@ describe "YAML::Serializable" do
     end
 
     it "defines query getter with class restriction" do
-      \{% begin \%}
-        \{% methods = YAMLAttrWithQueryAttributes.methods \%}
-        \{{ methods.find(&.name.==("foo?")).return_type }}.should eq(Bool)
-        \{{ methods.find(&.name.==("bar?")).return_type }}.should eq(Bool)
-      \{% end \%}
+      {% begin %}
+        {% methods = YAMLAttrWithQueryAttributes.methods %}
+        {{ methods.find(&.name.==("foo?")).return_type }}.should eq(Bool)
+        {{ methods.find(&.name.==("bar?")).return_type }}.should eq(Bool)
+      {% end %}
     end
 
     it "defines non-query setter and presence methods" do
@@ -772,5 +789,3 @@ describe "YAML::Serializable" do
     it { YAMLAttrModuleTest2.from_yaml(%({"bar": 30, "moo": 40})).to_tuple.should eq({40, 15, 30}) }
   end
 end
-
-{% end %}

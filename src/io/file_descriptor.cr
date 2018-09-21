@@ -11,11 +11,27 @@ class IO::FileDescriptor < IO
   getter fd
 
   def initialize(@fd, blocking = false)
-    @closed = false
+    @closed = system_closed?
 
     unless blocking || {{flag?(:win32)}}
       self.blocking = false
     end
+  end
+
+  # :nodoc:
+  def self.from_stdio(fd)
+    # If we have a TTY for stdin/out/err, it is possibly a shared terminal.
+    # We need to reopen it to use O_NONBLOCK without causing other programs to break
+
+    # Figure out the terminal TTY name. If ttyname fails we have a non-tty, or something strange.
+    path = uninitialized UInt8[256]
+    ret = LibC.ttyname_r(fd, path, 256)
+    return new(fd, blocking: true) unless ret == 0
+
+    clone_fd = LibC.open(path, LibC::O_RDWR)
+    return new(fd, blocking: true) if clone_fd == -1
+
+    new(clone_fd).tap(&.close_on_exec = true)
   end
 
   def blocking

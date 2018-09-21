@@ -20,10 +20,10 @@ module Crystal
         interpret_env(node)
       when "flag?"
         interpret_flag?(node)
-      when "puts", "p"
+      when "puts", "p", "pp"
         interpret_puts(node)
-      when "pp"
-        interpret_pp(node)
+      when "p!", "pp!"
+        interpret_pp!(node)
       when "skip_file"
         interpret_skip_file(node)
       when "system", "`"
@@ -122,7 +122,7 @@ module Crystal
       @last = Nop.new
     end
 
-    def interpret_pp(node)
+    def interpret_pp!(node)
       strings = [] of {String, String}
 
       node.args.each do |arg|
@@ -1242,6 +1242,8 @@ module Crystal
         interpret_argless_method(method, args) { @double_splat || Nop.new }
       when "block_arg"
         interpret_argless_method(method, args) { @block_arg || Nop.new }
+      when "accepts_block?"
+        interpret_argless_method(method, args) { BoolLiteral.new(@yields != nil) }
       when "return_type"
         interpret_argless_method(method, args) { @return_type || Nop.new }
       when "body"
@@ -1966,6 +1968,10 @@ module Crystal
             NilLiteral.new
           end
         end
+      when "resolve"
+        interpret_argless_method(method, args) { interpreter.resolve(self) }
+      when "resolve?"
+        interpret_argless_method(method, args) { interpreter.resolve?(self) || NilLiteral.new }
       else
         super
       end

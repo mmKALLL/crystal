@@ -238,13 +238,11 @@ abstract class Crystal::SemanticVisitor < Crystal::Visitor
 
   def lookup_type(node : ASTNode,
                   free_vars = nil,
-                  lazy_self = false,
                   find_root_generic_type_parameters = true)
     current_type.lookup_type(
       node,
       free_vars: free_vars,
       allow_typeof: false,
-      lazy_self: lazy_self,
       find_root_generic_type_parameters: find_root_generic_type_parameters
     )
   end
@@ -298,7 +296,7 @@ abstract class Crystal::SemanticVisitor < Crystal::Visitor
     generated_nodes = expand_macro(the_macro, node) do
       old_args = node.args
       node.args = args
-      expanded = @program.expand_macro the_macro, node, expansion_scope, @path_lookup, @untyped_def
+      expanded = @program.expand_macro the_macro, node, expansion_scope, expansion_scope, @untyped_def
       node.args = old_args
       expanded
     end
@@ -326,7 +324,7 @@ abstract class Crystal::SemanticVisitor < Crystal::Visitor
              end
 
     generated_nodes = @program.parse_macro_source(expanded_macro, the_macro, node, Set.new(@vars.keys),
-      inside_def: !!@typed_def,
+      current_def: @typed_def,
       inside_type: !current_type.is_a?(Program),
       inside_exp: @exp_nest > 0,
       mode: mode,

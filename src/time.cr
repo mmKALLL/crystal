@@ -37,12 +37,12 @@ require "crystal/system/time"
 #
 # ```
 # time = Time.utc(2016, 2, 15, 10, 20, 30)
-# time.to_s        # => 2016-02-15 10:20:30 UTC
+# time.to_s # => 2016-02-15 10:20:30 UTC
 # time = Time.new(2016, 2, 15, 10, 20, 30, location: Time::Location.load("Europe/Berlin"))
-# time.to_s        # => 2016-02-15 10:20:30 +01:00 Europe/Berlin
-# The time-of-day can be omitted and defaults to midnight (start of day):
+# time.to_s # => 2016-02-15 10:20:30 +01:00 Europe/Berlin
+# # The time-of-day can be omitted and defaults to midnight (start of day):
 # time = Time.utc(2016, 2, 15)
-# time.to_s        # => 2016-02-15 00:00:00 UTC
+# time.to_s # => 2016-02-15 00:00:00 UTC
 # ```
 #
 # ### Retrieving Time Information
@@ -59,10 +59,10 @@ require "crystal/system/time"
 # time.second      # => 30
 # time.millisecond # => 0
 # time.nanosecond  # => 0
-# time.day_of_week # => Monday
+# time.day_of_week # => Time::DayOfWeek::Monday
 # time.day_of_year # => 46
 # time.monday?     # => true
-# time.time_of_day # => 15:10:30
+# time.time_of_day # => 10:20:30
 # ```
 #
 # ### Time Zones
@@ -85,7 +85,7 @@ require "crystal/system/time"
 #
 # ```
 # time = Time.utc(2018, 3, 8, 22, 5, 13)
-# time          # => 2016-02-15 10:20:30 UTC
+# time          # => 2018-03-08 22:05:13.0 UTC
 # time.location # => #<Time::Location UTC>
 # time.zone     # => #<Time::Location::Zone UTC +00:00 (0s) STD>
 # time.offset   # => 0
@@ -118,6 +118,10 @@ require "crystal/system/time"
 # time.to_local # equals time.in(Location.local)
 # ```
 #
+# `#to_local_in` allows changing the time zone while keeping
+# the same local date-time (wall clock) which results in a different instant
+# on the time line.
+#
 # ### Formatting and Parsing Time
 #
 # To make date-time instances exchangeable between different computer systems
@@ -127,15 +131,15 @@ require "crystal/system/time"
 # The method `#to_s` formats the date-time according to a specified pattern.
 #
 # ```
-# time = Time.utc(2015, 10, 12, 10, 30, 00)
-# time.to_s("%Y-%m-%d %H:%m:%s %Z") # => "2015-10-12 10:30:00 +00:00"
+# time = Time.utc(2015, 10, 12, 10, 30, 0)
+# time.to_s("%Y-%m-%d %H:%M:%S %:z") # => "2015-10-12 10:30:00 +00:00"
 # ```
 #
 # Similarly, `Time.parse` is used to construct a `Time` instance from date-time
 # information in a string, according to a specified pattern:
 #
 # ```
-# Time.parse("2015-10-12 10:30:00 +00:00", "%Y-%m-%d %H:%m:%s %Z")
+# Time.parse("2015-10-12 10:30:00 +00:00", "%Y-%m-%d %H:%M:%S %z")
 # ```
 #
 # See `Time::Format` for all directives.
@@ -223,6 +227,9 @@ struct Time
 
   # :nodoc:
   NANOSECONDS_PER_MILLISECOND = 1_000_000_i64
+
+  # :nodoc:
+  NANOSECONDS_PER_MICROSECOND = 1_000_i64
 
   # :nodoc:
   NANOSECONDS_PER_SECOND = 1_000_000_000_i64
@@ -350,7 +357,7 @@ struct Time
   #
   # ```
   # time = Time.new(2016, 2, 15, 10, 20, 30, location: Time::Location.load("Europe/Berlin"))
-  # time.to_s # => 2016-02-15 10:20:30 +01:00 Europe/Berlin
+  # time.inspect # => "2016-02-15 10:20:30.0 +01:00 Europe/Berlin"
   # ```
   #
   # Valid value ranges for the individual fields:
@@ -367,7 +374,7 @@ struct Time
   #
   # ```
   # time = Time.new(2016, 2, 15)
-  # time.to_s # => 2016-02-15 00:00:00 +00:00 Local
+  # time.to_s # => "2016-02-15 00:00:00 +00:00"
   # ```
   #
   # The local date-time representation is resolved to a single instant based on
@@ -411,7 +418,7 @@ struct Time
   #
   # ```
   # time = Time.utc(2016, 2, 15, 10, 20, 30)
-  # time.to_s # => 2016-02-15 10:20:30 UTC
+  # time.to_s # => "2016-02-15 10:20:30 UTC"
   # ```
   #
   # Valid value ranges for the individual fields:
@@ -428,7 +435,7 @@ struct Time
   #
   # ```
   # time = Time.utc(2016, 2, 15)
-  # time.to_s # => 2016-02-15 00:00:00 UTC
+  # time.to_s # => "2016-02-15 00:00:00 UTC"
   # ```
   #
   # Since UTC does not have any time zone transitions, each date-time is
@@ -498,6 +505,28 @@ struct Time
     seconds = UNIX_SECONDS + (milliseconds / 1_000)
     nanoseconds = (milliseconds % 1000) * NANOSECONDS_PER_MILLISECOND
     utc(seconds: seconds, nanoseconds: nanoseconds.to_i)
+  end
+
+  # Creates a new `Time` instance with the same local date-time representation
+  # (wall clock) in a different *location*.
+  #
+  # Unlike `#in`, which always preserves the same instant in time, `#to_local_in`
+  # adjusts the instant such that it results in the same local date-time
+  # representation. Both instants are apart from each other by the difference in
+  # zone offsets.
+  #
+  # ```
+  # new_year = Time.utc(2019, 1, 1, 0, 0, 0)
+  # tokyo = new_year.to_local_in(Time::Location.load("Asia/Tokyo"))
+  # new_york = new_year.to_local_in(Time::Location.load("America/New_York"))
+  # tokyo.to_s    # => 2019-01-01 00:00:00.0 +09:00 Asia/Tokyo
+  # new_york.to_s # => 2019-01-01 00:00:00.0 -05:00 America/New_York
+  # ```
+  def to_local_in(location : Location)
+    local_seconds = offset_seconds
+    local_seconds -= Time.zone_offset_at(local_seconds, location)
+
+    Time.new(seconds: local_seconds, nanoseconds: nanosecond, location: location)
   end
 
   def clone : Time
@@ -682,7 +711,7 @@ struct Time
   #
   # ```
   # time.time_of_day == Time::Span.new(time.hour, time.minute, time.second, time.nanosecond)
-  # ``
+  # ```
   def time_of_day : Time::Span
     Span.new(nanoseconds: NANOSECONDS_PER_SECOND * (offset_seconds % SECONDS_PER_DAY) + nanosecond)
   end
@@ -870,7 +899,7 @@ struct Time
   # Format this time using the format specified by [RFC 3339](https://tools.ietf.org/html/rfc3339) ([ISO 8601](http://xml.coverpages.org/ISO-FDIS-8601.pdf) profile).
   #
   # ```
-  # Time.new(2016, 2, 15).to_rfc3339 # => "2016-02-15T00:00:00+00:00"
+  # Time.utc(2016, 2, 15).to_rfc3339 # => "2016-02-15T00:00:00Z"
   # ```
   #
   # ISO 8601 allows some freedom over the syntax and RFC 3339 exercises that
@@ -904,7 +933,7 @@ struct Time
   # Format this time using the format specified by [RFC 2822](https://www.ietf.org/rfc/rfc2822.txt).
   #
   # ```
-  # Time.new(2016, 2, 15).to_rfc2822 # => "Mon, 15 Feb 2016 00:00:00 -0400"
+  # Time.utc(2016, 2, 15).to_rfc2822 # => "Mon, 15 Feb 2016 00:00:00 +0000"
   # ```
   #
   # This is also compatible to [RFC 882](https://tools.ietf.org/html/rfc882) and [RFC 1123](https://tools.ietf.org/html/rfc1123#page-55).
@@ -932,10 +961,61 @@ struct Time
   # See `Time::Format` for details.
   #
   # ```
-  # Time.parse("2016-04-05", "%F") # => 2016-04-05 00:00:00 +01:00
+  # Time.parse("2016-04-05", "%F", Time::Location.load("Europe/Berlin")) # => 2016-04-05 00:00:00.0 +02:00 Europe/Berlin
   # ```
-  def self.parse(time : String, pattern : String, location : Location? = nil) : Time
+  #
+  # If there is no time zone information in the formatted time, *location* will
+  # be assumed. When *location* is `nil`, in such a case the parser will raise
+  # `Time::Format::Error`.
+  def self.parse(time : String, pattern : String, location : Location) : Time
     Format.new(pattern, location).parse(time)
+  end
+
+  # Parses a `Time` from *time* string using the given *pattern*.
+  #
+  # See `Time::Format` for details.
+  #
+  # ```
+  # Time.parse!("2016-04-05 +00:00", "%F %:z") # => 2016-04-05 00:00:00.0 +00:00
+  # Time.parse!("2016-04-05", "%F")            # raises Time::Format::Error
+  # ```
+  #
+  # If there is no time zone information in the formatted time, the parser will raise
+  # `Time::Format::Error`.
+  def self.parse!(time : String, pattern : String) : Time
+    Format.new(pattern, nil).parse(time)
+  end
+
+  # Parses a `Time` from *time* string using the given *pattern* and
+  # `Time::Location::UTC` as default location.
+  #
+  # See `Time::Format` for details.
+  #
+  # ```
+  # Time.parse_utc("2016-04-05", "%F") # => 2016-04-05 00:00:00.0 +00:00
+  # ```
+  #
+  # `Time::Location::UTC` will only be used as `location` if the formatted time
+  # does not contain any time zone information. The return value can't be
+  # assumed to be a UTC time (this can be achieved by calling `#to_utc`).
+  def self.parse_utc(time : String, pattern : String) : Time
+    parse(time, pattern, Location::UTC)
+  end
+
+  # Parses a `Time` from *time* string using the given *pattern* and
+  # `Time::Location.local` asdefault location
+  #
+  # See `Time::Format` for details.
+  #
+  # ```
+  # Time.parse_utc("2016-04-05", "%F") # => 2016-04-05 00:00:00.0 +00:00
+  # ```
+  #
+  # `Time::Location.local` will only be used as `location` if the formatted time
+  # does not contain any time zone information. The return value can't be
+  # assumed to be a UTC time (this can be achieved by calling `#to_local`).
+  def self.parse_local(time : String, pattern : String) : Time
+    parse(time, pattern, Location.local)
   end
 
   # Returns the number of seconds since the Unix epoch
@@ -987,6 +1067,10 @@ struct Time
   # time_de # => 2018-03-08 22:05:13 +01:00 Europe/Berlin
   # time_ar # => 2018-03-08 18:05:13 -03:00 America/Buenos_Aires
   # ```
+  #
+  # In contrast, `#to_local_in` changes to a different location while
+  # preserving the same wall time, which results in different instants on the
+  # time line.
   def in(location : Location) : Time
     return self if location == self.location
 

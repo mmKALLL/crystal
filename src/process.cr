@@ -95,8 +95,8 @@ class Process
   end
 
   # :nodoc:
-  protected def self.fork_internal(run_hooks : Bool = true, &block)
-    pid = self.fork_internal(run_hooks)
+  protected def self.fork_internal(will_exec : Bool = false, &block)
+    pid = self.fork_internal(will_exec)
 
     unless pid
       begin
@@ -114,17 +114,38 @@ class Process
     pid
   end
 
-  # *run_hooks* should ALWAYS be `true` unless `exec` is used immediately after fork.
-  # Channels, `IO` and other will not work reliably if *run_hooks* is `false`.
-  protected def self.fork_internal(run_hooks : Bool = true)
-    pid = LibC.fork
-    case pid
+  #
+  protected def self.fork_internal(will_exec : Bool = false)
+    newmask = uninitialized LibC::SigsetT
+    oldmask = uninitialized LibC::SigsetT
+
+    LibC.sigfillset(pointerof(newmask))
+    ret = LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(newmask), pointerof(oldmask))
+    raise Errno.new("Failed to disable signals") unless ret == 0
+
+    case pid = LibC.fork
     when 0
+      # child:
       pid = nil
-      Process.after_fork_child_callbacks.each(&.call) if run_hooks
+      if will_exec
+        # reset signal handlers, then sigmask (inherited on exec):
+        Crystal::Signal.after_fork_before_exec
+        LibC.sigemptyset(pointerof(newmask))
+        LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(newmask), nil)
+      else
+        Process.after_fork_child_callbacks.each(&.call)
+        LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(oldmask), nil)
+      end
     when -1
-      raise Errno.new("fork")
+      # error:
+      errno = Errno.value
+      LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(oldmask), nil)
+      raise Errno.new("fork", errno)
+    else
+      # parent:
+      LibC.pthread_sigmask(LibC::SIG_SETMASK, pointerof(oldmask), nil)
     end
+
     pid
   end
 
@@ -183,7 +204,9 @@ class Process
   def self.exec(command : String, args = nil, env : Env = nil, clear_env : Bool = false, shell : Bool = false,
                 input : Stdio = Redirect::Inherit, output : Stdio = Redirect::Inherit, error : Stdio = Redirect::Inherit, chdir : String? = nil)
     command, argv = prepare_argv(command, args, shell)
-    exec_internal(command, argv, env, clear_env, input, output, error, chdir)
+    unless exec_internal(command, argv, env, clear_env, input, output, error, chdir)
+      raise Errno.new("execvp")
+    end
   end
 
   getter pid : Int32
@@ -240,24 +263,40 @@ class Process
       end
     end
 
-    @pid = Process.fork_internal(run_hooks: false) do
+    reader_pipe, writer_pipe = IO.pipe
+
+    @pid = Process.fork_internal(will_exec: true) do
       begin
-        Process.exec_internal(
-          command,
-          argv,
-          env,
-          clear_env,
-          fork_input || input,
-          fork_output || output,
-          fork_error || error,
-          chdir
-        )
+        reader_pipe.close
+        writer_pipe.close_on_exec = true
+        unless Process.exec_internal(
+                 command,
+                 argv,
+                 env,
+                 clear_env,
+                 fork_input || input,
+                 fork_output || output,
+                 fork_error || error,
+                 chdir
+               )
+          writer_pipe.write_bytes(Errno.value)
+          writer_pipe.close
+        end
       rescue ex
         ex.inspect_with_backtrace STDERR
       ensure
         LibC._exit 127
       end
     end
+
+    writer_pipe.close
+    bytes = uninitialized UInt8[4]
+    if reader_pipe.read(bytes.to_slice) == 4
+      reader_pipe.close
+      errno = IO::ByteFormat::SystemEndian.decode(Int32, bytes.to_slice)
+      raise Errno.new("execvp", errno)
+    end
+    reader_pipe.close
 
     @waitpid = Crystal::SignalChildHandler.wait(pid)
 
@@ -373,9 +412,10 @@ class Process
 
   # :nodoc:
   protected def self.exec_internal(command : String, argv, env, clear_env, input, output, error, chdir)
-    reopen_io(input, STDIN, "r")
-    reopen_io(output, STDOUT, "w")
-    reopen_io(error, STDERR, "w")
+    # Reopen handles if the child is being redirected
+    reopen_io(input, IO::FileDescriptor.new(0, blocking: true), "r")
+    reopen_io(output, IO::FileDescriptor.new(1, blocking: true), "w")
+    reopen_io(error, IO::FileDescriptor.new(2, blocking: true), "w")
 
     ENV.clear if clear_env
     env.try &.each do |key, val|
@@ -388,9 +428,7 @@ class Process
 
     Dir.cd(chdir) if chdir
 
-    if LibC.execvp(command, argv) == -1
-      raise Errno.new("execvp")
-    end
+    LibC.execvp(command, argv) != -1
   end
 
   private def self.reopen_io(src_io, dst_io, mode)
@@ -399,10 +437,14 @@ class Process
       src_io.blocking = true
       dst_io.reopen(src_io)
     when Redirect::Inherit
+      return if dst_io.closed?
       dst_io.blocking = true
     when Redirect::Close
-      File.open("/dev/null", mode) do |file|
-        dst_io.reopen(file)
+      # Set the FD to devnull.
+      void = File.open(File::DEVNULL, mode)
+      if void.fd != dst_io.fd
+        dst_io.reopen(void)
+        void.close
       end
     else
       raise "BUG: unknown object type #{src_io}"

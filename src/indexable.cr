@@ -281,6 +281,69 @@ module Indexable(T)
     self
   end
 
+  # Optimized version of `Enumerable#join` that performs better when
+  # all of the elements in this indexable are strings: the total string
+  # bytesize to return can be computed before creating the final string,
+  # which performs better because there's no need to do reallocations.
+  def join(separator = "")
+    return "" if empty?
+
+    {% if T == String %}
+      join_strings(separator)
+    {% elsif String < T %}
+      if all?(&.is_a?(String))
+        join_strings(separator)
+      else
+        super(separator)
+      end
+    {% else %}
+      super(separator)
+    {% end %}
+  end
+
+  private def join_strings(separator)
+    separator = separator.to_s
+
+    # The total bytesize of the string to return is:
+    length =
+      ((self.size - 1) * separator.bytesize) + # the bytesize of all separators
+        self.sum(&.to_s.bytesize)              # the bytesize of all the elements
+
+    String.new(length) do |buffer|
+      # Also compute the UTF-8 size if we can
+      size = 0
+      size_known = true
+
+      each_with_index do |elem, i|
+        # elem is guaranteed to be a String, but the compiler doesn't know this
+        # if we enter via the all?(&.is_a?(String)) branch.
+        elem = elem.to_s
+
+        # Copy separator to buffer
+        if i != 0
+          buffer.copy_from(separator.to_unsafe, separator.bytesize)
+          buffer += separator.bytesize
+        end
+
+        # Copy element to buffer
+        buffer.copy_from(elem.to_unsafe, elem.bytesize)
+        buffer += elem.bytesize
+
+        # Check whether we'll know the final UTF-8 size
+        if elem.size_known?
+          size += elem.size
+        else
+          size_known = false
+        end
+      end
+
+      # Add size of all separators
+      size += (self.size - 1) * separator.size if size_known
+
+      {length, size_known ? size : 0}
+    end
+  end
+
   # Returns an `Array` with all the elements in the collection.
   #
   # ```
@@ -503,25 +566,85 @@ module Indexable(T)
     indexes.map { |index| self[index] }
   end
 
-  def zip(other : Indexable)
+  # Calls the given block for each index in `self`, passing in the elements
+  # `{self[i], other[i]}` for each index.
+  #
+  # Raises an `IndexError` if `other` is shorter than `self`.
+  #
+  # ```
+  # a = [1, 2, 3]
+  # b = ["a", "b", "c"]
+  #
+  # a.zip(b) { |x, y| puts "#{x} -- #{y}" }
+  # ```
+  #
+  # The above produces:
+  #
+  # ```text
+  # 1 --- a
+  # 2 --- b
+  # 3 --- c
+  # ```
+  def zip(other : Indexable(U), &block : T, U ->) forall U
     each_with_index do |elem, i|
       yield elem, other[i]
     end
   end
 
-  def zip(other : Indexable(U)) forall U
+  # Returns an `Array` of tuples populated with the *i*th indexed element from
+  # `self` followed by the *i*th indexed element from `other`.
+  #
+  # Raises an `IndexError` if `other` is shorter than `self`.
+  #
+  # ```
+  # a = [1, 2, 3]
+  # b = ["a", "b", "c"]
+  #
+  # a.zip(b) # => [{1, "a"}, {2, "b"}, {3, "c"}]
+  # ```
+  def zip(other : Indexable(U)) : Array({T, U}) forall U
     pairs = Array({T, U}).new(size)
     zip(other) { |x, y| pairs << {x, y} }
     pairs
   end
 
-  def zip?(other : Indexable)
+  # Calls the given block for each index in `self`, passing in the elements
+  # `{self[i], other[i]}` for each index.
+  #
+  # If `other` is shorter than `self`, missing values are filled up with `nil`.
+  #
+  # ```
+  # a = [1, 2, 3]
+  # b = ["a", "b"]
+  #
+  # a.zip?(b) { |x, y| puts "#{x} -- #{y}" }
+  # ```
+  #
+  # The above produces:
+  #
+  # ```text
+  # 1 --- a
+  # 2 --- b
+  # 3 ---
+  # ```
+  def zip?(other : Indexable(U), &block : T, U? ->) forall U
     each_with_index do |elem, i|
       yield elem, other[i]?
     end
   end
 
-  def zip?(other : Indexable(U)) forall U
+  # Returns an `Array` of tuples populated with the *i*th indexed element from
+  # `self` followed by the *i*th indexed element from `other`.
+  #
+  # If `other` is shorter than `self`, missing values are filled up with `nil`.
+  #
+  # ```
+  # a = [1, 2, 3]
+  # b = ["a", "b"]
+  #
+  # a.zip?(b) # => [{1, "a"}, {2, "b"}, {3, nil}]
+  # ```
+  def zip?(other : Indexable(U)) : Array({T, U?}) forall U
     pairs = Array({T, U?}).new(size)
     zip?(other) { |x, y| pairs << {x, y} }
     pairs

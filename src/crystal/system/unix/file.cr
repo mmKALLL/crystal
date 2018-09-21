@@ -12,62 +12,18 @@ module Crystal::System::File
     fd
   end
 
-  private def self.open_flag(mode)
-    if mode.size == 0
-      raise "Invalid access mode #{mode}"
-    end
+  def self.mktemp(prefix, suffix, dir) : {LibC::Int, String}
+    dir = dir + ::File::SEPARATOR
+    path = "#{dir}#{prefix}.XXXXXX#{suffix}"
 
-    m = 0
-    o = 0
-    case mode[0]
-    when 'r'
-      m = LibC::O_RDONLY
-    when 'w'
-      m = LibC::O_WRONLY
-      o = LibC::O_CREAT | LibC::O_TRUNC
-    when 'a'
-      m = LibC::O_WRONLY
-      o = LibC::O_CREAT | LibC::O_APPEND
-    else
-      raise "Invalid access mode #{mode}"
-    end
-
-    case mode.size
-    when 1
-      # Nothing
-    when 2
-      case mode[1]
-      when '+'
-        m = LibC::O_RDWR
-      when 'b'
-        # Nothing
-      else
-        raise "Invalid access mode #{mode}"
-      end
-    else
-      raise "Invalid access mode #{mode}"
-    end
-
-    oflag = m | o
-  end
-
-  def self.mktemp(name, extension)
-    tmpdir = tempdir + ::File::SEPARATOR
-    path = "#{tmpdir}#{name}.XXXXXX#{extension}"
-
-    if extension
-      fd = LibC.mkstemps(path, extension.bytesize)
+    if suffix
+      fd = LibC.mkstemps(path, suffix.bytesize)
     else
       fd = LibC.mkstemp(path)
     end
 
-    raise Errno.new("mkstemp") if fd == -1
+    raise Errno.new("mkstemp: #{path.inspect}") if fd == -1
     {fd, path}
-  end
-
-  def self.tempdir
-    tmpdir = ENV["TMPDIR"]? || "/tmp"
-    tmpdir.rchop(::File::SEPARATOR)
   end
 
   def self.info?(path : String, follow_symlinks : Bool) : ::File::Info?
@@ -162,7 +118,7 @@ module Crystal::System::File
     timevals[1] = to_timeval(mtime)
     ret = LibC.utimes(filename, timevals)
     if ret != 0
-      raise Errno.new("Error setting time to file '#{filename}'")
+      raise Errno.new("Error setting time on file '#{filename}'")
     end
   end
 

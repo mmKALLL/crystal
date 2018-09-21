@@ -195,6 +195,10 @@ module Crystal
         unless const.value.type?
           node.raise "can't infer type of constant #{const} (maybe the constant refers to itself?)"
         end
+
+        if const.value.type.no_return?
+          node.raise "constant #{const} has illegal type NoReturn"
+        end
       end
 
       node.value = node.value.transform self
@@ -726,6 +730,28 @@ module Crystal
     def transform(node : TupleLiteral)
       super
       node.update
+
+      no_return_index = node.elements.index &.no_returns?
+      if no_return_index
+        exps = Expressions.new(node.elements[0, no_return_index + 1])
+        exps.bind_to(exps.expressions.last)
+        return exps
+      end
+
+      node
+    end
+
+    def transform(node : NamedTupleLiteral)
+      super
+      node.update
+
+      no_return_index = node.entries.index &.value.no_returns?
+      if no_return_index
+        exps = Expressions.new(node.entries[0, no_return_index + 1].map &.value)
+        exps.bind_to(exps.expressions.last)
+        return exps
+      end
+
       node
     end
 

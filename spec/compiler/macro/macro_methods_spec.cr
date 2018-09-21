@@ -1120,7 +1120,7 @@ module Crystal
       end
 
       it "executes class" do
-        assert_macro("x", "{{x.class.name}}", "String:Class") do |program|
+        assert_macro("x", "{{x.class.name}}", "String.class") do |program|
           [TypeNode.new(program.string)] of ASTNode
         end
       end
@@ -1302,6 +1302,11 @@ module Crystal
       it "executes block_arg" do
         assert_macro "x", %({{x.block_arg}}), [Def.new("some_def", ["x".arg, "y".arg], block_arg: "b".arg)] of ASTNode, "b"
         assert_macro "x", %({{x.block_arg}}), [Def.new("some_def")] of ASTNode, ""
+      end
+
+      it "executes accepts_block?" do
+        assert_macro "x", %({{x.accepts_block?}}), [Def.new("some_def", ["x".arg, "y".arg], yields: 1)] of ASTNode, "true"
+        assert_macro "x", %({{x.accepts_block?}}), [Def.new("some_def")] of ASTNode, "false"
       end
 
       it "executes return_type" do
@@ -1613,6 +1618,24 @@ module Crystal
       it "executes named_args" do
         assert_macro "x", %({{x.named_args}}), [Generic.new("Foo".path, [] of ASTNode, named_args: [NamedArgument.new("x", "U".path), NamedArgument.new("y", "V".path)])] of ASTNode, "{x: U, y: V}"
       end
+
+      it "executes resolve" do
+        assert_macro "x", %({{x.resolve}}), [Generic.new("Array".path, ["String".path] of ASTNode)] of ASTNode, %(Array(String))
+
+        expect_raises(Crystal::TypeException, "undefined constant Foo") do
+          assert_macro "x", %({{x.resolve}}), [Generic.new("Foo".path, ["String".path] of ASTNode)] of ASTNode, %(Foo(String))
+        end
+
+        expect_raises(Crystal::TypeException, "undefined constant Foo") do
+          assert_macro "x", %({{x.resolve}}), [Generic.new("Array".path, ["Foo".path] of ASTNode)] of ASTNode, %(Array(foo))
+        end
+      end
+
+      it "executes resolve?" do
+        assert_macro "x", %({{x.resolve?}}), [Generic.new("Array".path, ["String".path] of ASTNode)] of ASTNode, %(Array(String))
+        assert_macro "x", %({{x.resolve?}}), [Generic.new("Foo".path, ["String".path] of ASTNode)] of ASTNode, %(nil)
+        assert_macro "x", %({{x.resolve?}}), [Generic.new("Array".path, ["Foo".path] of ASTNode)] of ASTNode, %(nil)
+      end
     end
 
     describe "union methods" do
@@ -1685,6 +1708,53 @@ module Crystal
 
     it "compares versions" do
       assert_macro "", %({{compare_versions("1.10.3", "1.2.3")}}), [] of ASTNode, %(1)
+    end
+
+    describe "printing" do
+      it "puts" do
+        String.build do |io|
+          assert_macro "foo", %({% puts foo %}), "" do |program|
+            program.stdout = io
+            ["bar".string] of ASTNode
+          end
+        end.should eq %("bar"\n)
+      end
+
+      it "p" do
+        String.build do |io|
+          assert_macro "foo", %({% p foo %}), "" do |program|
+            program.stdout = io
+            ["bar".string] of ASTNode
+          end
+        end.should eq %("bar"\n)
+      end
+
+      it "p!" do
+        String.build do |io|
+          assert_macro "foo", "{% p! foo %}", "" do |program|
+            program.stdout = io
+            ["bar".string] of ASTNode
+          end
+        end.should eq %(foo # => "bar"\n)
+      end
+
+      it "pp" do
+        String.build do |io|
+          assert_macro "foo", "{% pp foo %}", "" do |program|
+            program.stdout = io
+            ["bar".string] of ASTNode
+          end
+        end.should eq %("bar"\n)
+      end
+
+      it "pp!" do
+        String.build do |io|
+          assert_macro "foo", "{% pp! foo %}", "" do |program|
+            program.stdout = io
+            ["bar".string] of ASTNode
+          end
+        end.should eq %(foo # => "bar"\n)
+      end
     end
   end
 end

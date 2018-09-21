@@ -7,7 +7,7 @@
 # obj["access"][1]["speed"].as_s # => "slow"
 # ```
 #
-# Note that methods used to traverse a JSON structure, `#[]`, `#[]?` and `#each`,
+# Note that methods used to traverse a JSON structure, `#[]` and `#[]?`,
 # always return a `JSON::Any` to allow further traversal. To convert them to `String`,
 # `Int32`, etc., use the `as_` methods, such as `#as_s`, `#as_i`, which perform
 # a type check against the raw underlying value. This means that invoking `#as_s`
@@ -248,6 +248,16 @@ struct JSON::Any
   # :nodoc:
   def to_json(json : JSON::Builder)
     raw.to_json(json)
+  end
+
+  # Returns a new JSON::Any instance with the `raw` value `dup`ed.
+  def dup
+    Any.new(raw.dup)
+  end
+
+  # Returns a new JSON::Any instance with the `raw` value `clone`ed.
+  def clone
+    Any.new(raw.clone)
   end
 end
 

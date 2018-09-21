@@ -1,7 +1,7 @@
-require "spec"
+require "../../spec_helper"
 require "http/server"
 require "http/client/response"
-require "tempfile"
+require "../../../support/ssl"
 
 private class RaiseErrno < IO
   def initialize(@value : Int32)
@@ -52,6 +52,17 @@ private def unix_request(path)
   end
 end
 
+private def unused_port
+  TCPServer.open(0) do |server|
+    server.local_address.port
+  end
+end
+
+private class SilentErrorHTTPServer < HTTP::Server
+  private def handle_exception(e)
+  end
+end
+
 module HTTP
   class Server
     describe Response do
@@ -59,6 +70,9 @@ module HTTP
         io = IO::Memory.new
         response = Response.new(io)
         response.close
+        response.closed?.should be_true
+        io.closed?.should be_false
+        expect_raises(IO::Error, "Closed stream") { response << "foo" }
         io.to_s.should eq("HTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n")
       end
 
@@ -294,6 +308,118 @@ module HTTP
         end
         server.close unless server.closed?
       end
+
+      describe "with URI" do
+        it "accepts URI" do
+          server = Server.new { }
+
+          begin
+            port = unused_port
+            address = server.bind URI.parse("tcp://127.0.0.1:#{port}")
+            address.should eq Socket::IPAddress.new("127.0.0.1", port)
+          ensure
+            server.close
+          end
+        end
+
+        it "accepts String" do
+          server = Server.new { }
+
+          begin
+            port = unused_port
+            address = server.bind "tcp://127.0.0.1:#{port}"
+            address.should eq Socket::IPAddress.new("127.0.0.1", port)
+          ensure
+            server.close
+          end
+        end
+
+        it "parses TCP" do
+          server = Server.new { }
+
+          begin
+            port = unused_port
+            address = server.bind "tcp://127.0.0.1:#{port}"
+            address.should eq Socket::IPAddress.new("127.0.0.1", port)
+          ensure
+            server.close
+          end
+        end
+
+        it "parses SSL" do
+          server = Server.new { }
+
+          private_key = datapath("openssl", "openssl.key")
+          certificate = datapath("openssl", "openssl.crt")
+
+          begin
+            port = unused_port
+            expect_raises(ArgumentError, "missing CA certificate") do
+              server.bind "tls://127.0.0.1:#{port}?key=#{private_key}&cert=#{certificate}&verify_mode=force-peer"
+            end
+
+            address = server.bind "tls://127.0.0.1:#{port}?key=#{private_key}&cert=#{certificate}&ca=#{certificate}"
+            address.should eq Socket::IPAddress.new("127.0.0.1", port)
+
+            port = unused_port
+            address = server.bind "ssl://127.0.0.1:#{port}?key=#{private_key}&cert=#{certificate}&ca=#{certificate}"
+            address.should eq Socket::IPAddress.new("127.0.0.1", port)
+          ensure
+            server.close
+          end
+        end
+
+        it "fails SSL with invalid params" do
+          server = Server.new { }
+
+          private_key = datapath("openssl", "openssl.key")
+          certificate = datapath("openssl", "openssl.crt")
+
+          begin
+            expect_raises(ArgumentError, "missing private key") { server.bind "tls://127.0.0.1:8081" }
+            expect_raises(OpenSSL::Error, "No such file or directory") { server.bind "tls://127.0.0.1:8081?key=foo.key" }
+            expect_raises(ArgumentError, "missing certificate") { server.bind "tls://127.0.0.1:8081?key=#{private_key}" }
+          ensure
+            server.close
+          end
+        end
+
+        it "fails with unknown scheme" do
+          server = Server.new { }
+
+          begin
+            expect_raises(ArgumentError, "Unsupported socket type: udp") do
+              server.bind "udp://127.0.0.1:8081"
+            end
+          ensure
+            server.close
+          end
+        end
+      end
+    end
+
+    describe "#bind_tls" do
+      it "binds SSL server context" do
+        server = Server.new do |context|
+          context.response.puts "Test Server (#{context.request.headers["Host"]?})"
+          context.response.close
+        end
+
+        server_context, client_context = ssl_context_pair
+
+        socket = OpenSSL::SSL::Server.new(TCPServer.new("127.0.0.1", 0), server_context)
+        server.bind socket
+        ip_address1 = server.bind_tls "127.0.0.1", 0, server_context
+        ip_address2 = socket.local_address
+
+        spawn server.listen
+        Fiber.yield
+
+        HTTP::Client.get("https://#{ip_address1}", tls: client_context).body.should eq "Test Server (#{ip_address1})\n"
+        HTTP::Client.get("https://#{ip_address2}", tls: client_context).body.should eq "Test Server (#{ip_address2})\n"
+
+        server.close
+      end
     end
 
     describe "#listen" do
@@ -326,8 +452,8 @@ module HTTP
     {% if flag?(:unix) %}
       describe "#bind_unix" do
         it "binds to different unix sockets" do
-          path1 = Tempfile.tempname
-          path2 = Tempfile.tempname
+          path1 = File.tempname
+          path2 = File.tempname
 
           begin
             server = Server.new do |context|
@@ -358,6 +484,74 @@ module HTTP
         end
       end
     {% end %}
+
+    it "handles exception during SSL handshake (#6577)" do
+      server = SilentErrorHTTPServer.new do |context|
+        context.response.print "ok"
+        context.response.close
+      end
+
+      server_context, client_context = ssl_context_pair
+      address = server.bind_tls "localhost", server_context
+
+      server_done = false
+      spawn do
+        server.listen
+        server_done = true
+      end
+
+      3.times do
+        # Perform multiple wrong calls together and check
+        # that the server is still able to respond.
+        3.times do
+          empty_context = OpenSSL::SSL::Context::Client.new
+          socket = TCPSocket.new(address.address, address.port)
+          expect_raises(OpenSSL::SSL::Error) do
+            OpenSSL::SSL::Socket::Client.new(socket, empty_context)
+          end
+        end
+        HTTP::Client.get("https://#{address}/", tls: client_context).body.should eq "ok"
+      end
+
+      Fiber.yield
+
+      server_done.should be_false
+    end
+
+    describe "#close" do
+      it "closes gracefully" do
+        server = Server.new do |context|
+          context.response.flush
+          context.response.puts "foo"
+          context.response.flush
+
+          Fiber.yield
+
+          context.response.puts "bar"
+        end
+
+        address = server.bind_unused_port
+        spawn server.listen
+
+        TCPSocket.open(address.address, address.port) do |socket|
+          socket << "GET / HTTP/1.1\r\n\r\n"
+
+          while true
+            line = socket.gets || break
+            break if line.empty?
+          end
+
+          socket = HTTP::ChunkedContent.new(socket)
+
+          socket.gets.should eq "foo"
+
+          server.close
+
+          socket.closed?.should be_false
+          socket.gets.should eq "bar"
+        end
+      end
+    end
   end
 
   describe HTTP::Server::RequestProcessor do
