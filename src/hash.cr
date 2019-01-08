@@ -13,6 +13,24 @@ class Hash(K, V)
   @last : Entry(K, V)?
   @block : (self, K -> V)?
 
+  # Creates a new empty `Hash` with a *block* for handling missing keys.
+  #
+  # ```
+  # proc = ->(hash : Hash(String, Int32), key : String) { hash[key] = key.size }
+  # hash = Hash(String, Int32).new(proc)
+  #
+  # hash.size   # => 0
+  # hash["foo"] # => 3
+  # hash.size   # => 1
+  # hash["bar"] = 10
+  # hash["bar"] # => 10
+  # ```
+  #
+  # The *initial_capacity* is useful to avoid unnecessary reallocations
+  # of the internal buffer in case of growth. If the number of elements
+  # a hash will hold is known, the hash should be initialized with that
+  # capacity for improved performance. Otherwise, the default is 11 and inputs
+  # less than 11 are ignored.
   def initialize(block : (Hash(K, V), K -> V)? = nil, initial_capacity = nil)
     initial_capacity ||= 11
     initial_capacity = 11 if initial_capacity < 11
@@ -23,10 +41,50 @@ class Hash(K, V)
     @block = block
   end
 
+  # Creates a new empty `Hash` with a *block* that handles missing keys.
+  #
+  # ```
+  # hash = Hash(String, Int32).new do |hash, key|
+  #   hash[key] = key.size
+  # end
+  #
+  # hash.size   # => 0
+  # hash["foo"] # => 3
+  # hash.size   # => 1
+  # hash["bar"] = 10
+  # hash["bar"] # => 10
+  # ```
+  #
+  # The *initial_capacity* is useful to avoid unnecessary reallocations
+  # of the internal buffer in case of growth. If the number of elements
+  # a hash will hold is known, the hash should be initialized with that
+  # capacity for improved performance. Otherwise, the default is 11 and inputs
+  # less than 11 are ignored.
   def self.new(initial_capacity = nil, &block : (Hash(K, V), K -> V))
     new block, initial_capacity: initial_capacity
   end
 
+  # Creates a new empty `Hash` where the *default_value* is returned if a key is missing.
+  #
+  # ```
+  # inventory = Hash(String, Int32).new(0)
+  # inventory["socks"] = 3
+  # inventory["pickles"] # => 0
+  # ```
+  #
+  # NOTE: The default value is passed by reference:
+  # ```
+  # arr = [1, 2, 3]
+  # hash = Hash(String, Array(Int32)).new(arr)
+  # hash["3"][1] = 4
+  # arr # => [1, 4, 3]
+  # ```
+  #
+  # The *initial_capacity* is useful to avoid unnecessary reallocations
+  # of the internal buffer in case of growth. If the number of elements
+  # a hash will hold is known, the hash should be initialized with that
+  # capacity for improved performance. Otherwise, the default is 11 and inputs
+  # less than 11 are ignored.
   def self.new(default_value : V, initial_capacity = nil)
     new(initial_capacity: initial_capacity) { default_value }
   end
@@ -57,9 +115,30 @@ class Hash(K, V)
     value
   end
 
-  # See also: `Hash#fetch`.
+  # Returns the value for the key given by *key*.
+  # If not found, returns the default value given by `Hash.new`, otherwise raises `KeyError`.
+  #
+  # ```
+  # h = {"foo" => "bar"}
+  # h["foo"] # => "bar"
+  #
+  # h = Hash(String, String).new("bar")
+  # h["foo"] # => "bar"
+  #
+  # h = Hash(String, String).new { "bar" }
+  # h["foo"] # => "bar"
+  #
+  # h = Hash(String, String).new
+  # h["foo"] # raises KeyError
+  # ```
   def [](key)
-    fetch(key)
+    fetch(key) do
+      if (block = @block) && key.is_a?(K)
+        block.call(self, key.as(K))
+      else
+        raise KeyError.new "Missing hash key: #{key.inspect}"
+      end
+    end
   end
 
   # Returns the value for the key given by *key*.
@@ -75,6 +154,45 @@ class Hash(K, V)
   # ```
   def []?(key)
     fetch(key, nil)
+  end
+
+  # Traverses the depth of a structure and returns the value.
+  # Returns `nil` if not found.
+  #
+  # ```
+  # h = {"a" => {"b" => [10, 20, 30]}}
+  # h.dig? "a", "b"                # => [10, 20, 30]
+  # h.dig? "a", "b", "c", "d", "e" # => nil
+  # ```
+  def dig?(key : K, *subkeys)
+    if (value = self[key]?) && value.responds_to?(:dig?)
+      value.dig?(*subkeys)
+    end
+  end
+
+  # :nodoc:
+  def dig?(key : K)
+    self[key]?
+  end
+
+  # Traverses the depth of a structure and returns the value, otherwise
+  # raises `KeyError`.
+  #
+  # ```
+  # h = {"a" => {"b" => [10, 20, 30]}}
+  # h.dig "a", "b"                # => [10, 20, 30]
+  # h.dig "a", "b", "c", "d", "e" # raises KeyError
+  # ```
+  def dig(key : K, *subkeys)
+    if (value = self[key]) && value.responds_to?(:dig)
+      return value.dig(*subkeys)
+    end
+    raise KeyError.new "Hash value not diggable for key: #{key.inspect}"
+  end
+
+  # :nodoc:
+  def dig(key : K)
+    self[key]
   end
 
   # Returns `true` when key given by *key* exists, otherwise `false`.
@@ -102,32 +220,6 @@ class Hash(K, V)
     false
   end
 
-  # Returns the value for the key given by *key*.
-  # If not found, returns the default value given by `Hash.new`, otherwise raises `KeyError`.
-  #
-  # ```
-  # h = {"foo" => "bar"}
-  # h["foo"] # => "bar"
-  #
-  # h = Hash(String, String).new("bar")
-  # h["foo"] # => "bar"
-  #
-  # h = Hash(String, String).new { "bar" }
-  # h["foo"] # => "bar"
-  #
-  # h = Hash(String, String).new
-  # h["foo"] # raises KeyError
-  # ```
-  def fetch(key)
-    fetch(key) do
-      if (block = @block) && key.is_a?(K)
-        block.call(self, key.as(K))
-      else
-        raise KeyError.new "Missing hash key: #{key.inspect}"
-      end
-    end
-  end
-
   # Returns the value for the key given by *key*, or when not found the value given by *default*.
   # This ignores the default value set by `Hash.new`.
   #
@@ -144,7 +236,8 @@ class Hash(K, V)
   #
   # ```
   # h = {"foo" => "bar"}
-  # h.fetch("foo") { |key| key.upcase } # => "bar"
+  # h.fetch("foo") { "default value" }  # => "bar"
+  # h.fetch("bar") { "default value" }  # => "default value"
   # h.fetch("bar") { |key| key.upcase } # => "BAR"
   # ```
   def fetch(key)
@@ -799,7 +892,7 @@ class Hash(K, V)
       copy = hasher
       copy = key.hash(copy)
       copy = value.hash(copy)
-      result += copy.result
+      result &+= copy.result
     end
 
     result.hash(hasher)

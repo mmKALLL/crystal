@@ -496,7 +496,7 @@ class Array(T)
   end
 
   @[AlwaysInline]
-  def unsafe_at(index : Int)
+  def unsafe_fetch(index : Int)
     @buffer[index]
   end
 
@@ -890,17 +890,58 @@ class Array(T)
   # Modifies `self`, keeping only the elements in the collection for which the
   # passed block returns `true`. Returns `self`.
   #
+  # ```
+  # ary = [1, 6, 2, 4, 8]
+  # ary.select! { |x| x > 3 }
+  # ary # => [6, 4, 8]
+  # ```
+  #
   # See also: `Array#select`.
   def select!
     reject! { |elem| !yield(elem) }
   end
 
+  # Modifies `self`, keeping only the elements in the collection for which
+  # `pattern === element`.
+  #
+  # ```
+  # ary = [1, 6, 2, 4, 8]
+  # ary.select!(3..7)
+  # ary # => [6, 4]
+  # ```
+  #
+  # See also: `Array#reject!`.
+  def select!(pattern)
+    self.select! { |elem| pattern === elem }
+  end
+
   # Modifies `self`, deleting the elements in the collection for which the
   # passed block returns `true`. Returns `self`.
+  #
+  # ```
+  # ary = [1, 6, 2, 4, 8]
+  # ary.reject! { |x| x > 3 }
+  # ary # => [1, 2]
+  # ```
   #
   # See also: `Array#reject`.
   def reject!
     internal_delete { |e| yield e }
+    self
+  end
+
+  # Modifies `self`, deleting the elements in the collection for which
+  # `pattern === element`.
+  #
+  # ```
+  # ary = [1, 6, 2, 4, 8]
+  # ary.reject!(3..7)
+  # ary # => [1, 2, 8]
+  # ```
+  #
+  # See also: `Array#select!`.
+  def reject!(pattern)
+    reject! { |elem| pattern === elem }
     self
   end
 
@@ -944,6 +985,24 @@ class Array(T)
   def map_with_index!(&block : (T, Int32) -> T)
     to_unsafe.map_with_index!(size) { |e, i| yield e, i }
     self
+  end
+
+  # Returns an `Array` with the first *count* elements removed
+  # from the original array.
+  #
+  # If *count* is bigger than the number of elements in the array, returns an empty array.
+  #
+  # ```
+  # [1, 2, 3, 4, 5, 6].skip(3) # => [4, 5, 6]
+  # ```
+  def skip(count : Int) : Array(T)
+    raise ArgumentError.new("Attempt to skip negative size") if count < 0
+
+    new_size = Math.max(size - count, 0)
+    Array(T).build(new_size) do |buffer|
+      buffer.copy_from(to_unsafe + count, new_size)
+      new_size
+    end
   end
 
   # Returns an `Array` with all possible permutations of *size*.
@@ -1529,7 +1588,7 @@ class Array(T)
   end
 
   # Modifies `self` by randomizing the order of elements in the collection
-  # using the given *random* number generator.  Returns `self`.
+  # using the given *random* number generator. Returns `self`.
   def shuffle!(random = Random::DEFAULT)
     @buffer.shuffle!(size, random)
     self
@@ -1694,15 +1753,15 @@ class Array(T)
   def transpose
     return Array(Array(typeof(first.first))).new if empty?
 
-    len = at(0).size
+    len = self[0].size
     (1...@size).each do |i|
-      l = at(i).size
+      l = self[i].size
       raise IndexError.new if len != l
     end
 
     Array(Array(typeof(first.first))).new(len) do |i|
       Array(typeof(first.first)).new(@size) do |j|
-        at(j).at(i)
+        self[j][i]
       end
     end
   end

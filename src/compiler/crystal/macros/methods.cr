@@ -4,13 +4,46 @@ require "semantic_version"
 
 module Crystal
   class MacroInterpreter
+    private def find_source_file(filename)
+      # Support absolute paths
+      if filename.starts_with?('/')
+        filename = "#{filename}.cr" unless filename.ends_with?(".cr")
+
+        if File.exists?(filename)
+          unless File.file?(filename)
+            return yield "#{filename.inspect} is not a file"
+          end
+        else
+          return yield "can't find file #{filename.inspect}"
+        end
+      else
+        begin
+          relative_to = @location.try &.original_filename
+          found_filenames = @program.find_in_path(filename, relative_to)
+        rescue ex
+          return yield ex.message
+        end
+
+        unless found_filenames
+          return yield "can't find file #{filename.inspect}"
+        end
+
+        if found_filenames.size > 1
+          return yield "#{filename.inspect} is a directory"
+        end
+
+        filename = found_filenames.first
+      end
+      filename
+    end
+
     def interpret_top_level_call(node)
       interpret_top_level_call?(node) ||
         node.raise("undefined macro method: '#{node.name}'")
     end
 
     def interpret_top_level_call?(node)
-      # Please order method names in lexicographical order, because OCD
+      # Please order method names in lexicographical order
       case node.name
       when "compare_versions"
         interpret_compare_versions(node)
@@ -30,6 +63,10 @@ module Crystal
         interpret_system(node)
       when "raise"
         interpret_raise(node)
+      when "read_file"
+        interpret_read_file(node)
+      when "read_file?"
+        interpret_read_file(node, nilable: true)
       when "run"
         interpret_run(node)
       else
@@ -139,7 +176,7 @@ module Crystal
     end
 
     def interpret_skip_file(node)
-      raise SkipMacroException.new(@str.to_s)
+      raise SkipMacroException.new(@str.to_s, macro_expansion_pragmas)
     end
 
     def interpret_system(node)
@@ -163,43 +200,32 @@ module Crystal
       macro_raise(node, node.args, self)
     end
 
+    def interpret_read_file(node, nilable = false)
+      unless node.args.size == 1
+        node.wrong_number_of_arguments "macro call '#{node.name}'", node.args.size, 1
+      end
+
+      node.args[0].accept self
+      filename = @last.to_macro_id
+
+      begin
+        @last = StringLiteral.new(File.read(filename))
+      rescue ex
+        node.raise ex.to_s unless nilable
+        @last = NilLiteral.new
+      end
+    end
+
     def interpret_run(node)
       if node.args.size == 0
         node.wrong_number_of_arguments "macro call 'run'", 0, "1+"
       end
 
       node.args.first.accept self
-      filename = @last.to_macro_id
-      original_filename = filename
+      original_filename = @last.to_macro_id
 
-      # Support absolute paths
-      if filename.starts_with?("/")
-        filename = "#{filename}.cr" unless filename.ends_with?(".cr")
-
-        if File.exists?(filename)
-          unless File.file?(filename)
-            node.raise "error executing macro run: '#{filename}' is not a file"
-          end
-        else
-          node.raise "error executing macro run: can't find file '#{filename}'"
-        end
-      else
-        begin
-          relative_to = @location.try &.original_filename
-          found_filenames = @program.find_in_path(filename, relative_to)
-        rescue ex
-          node.raise "error executing macro run: #{ex.message}"
-        end
-
-        unless found_filenames
-          node.raise "error executing macro run: can't find file '#{filename}'"
-        end
-
-        if found_filenames.size > 1
-          node.raise "error executing macro run: '#{filename}' is a directory"
-        end
-
-        filename = found_filenames.first
+      filename = find_source_file(original_filename) do |error_message|
+        node.raise "error executing macro 'run': #{error_message}"
       end
 
       run_args = [] of String
@@ -622,8 +648,8 @@ module Crystal
         end
       when "gsub"
         interpret_two_args_method(method, args) do |first, second|
-          raise "first arguent to StringLiteral#gsub must be a regex, not #{first.class_desc}" unless first.is_a?(RegexLiteral)
-          raise "second arguent to StringLiteral#gsub must be a string, not #{second.class_desc}" unless second.is_a?(StringLiteral)
+          raise "first argument to StringLiteral#gsub must be a regex, not #{first.class_desc}" unless first.is_a?(RegexLiteral)
+          raise "second argument to StringLiteral#gsub must be a string, not #{second.class_desc}" unless second.is_a?(StringLiteral)
 
           regex_value = first.value
           if regex_value.is_a?(StringLiteral)
@@ -671,6 +697,16 @@ module Crystal
         else
           wrong_number_of_arguments "StringLiteral#split", args.size, "0..1"
         end
+      when "count"
+        interpret_one_arg_method(method, args) do |arg|
+          case arg
+          when CharLiteral
+            chr = arg.value
+          else
+            raise "StringLiteral#count expects char, not #{arg.class_desc}"
+          end
+          NumberLiteral.new(@value.count(chr))
+        end
       when "starts_with?"
         interpret_one_arg_method(method, args) do |arg|
           case arg
@@ -705,8 +741,9 @@ module Crystal
         end
       when "tr"
         interpret_two_args_method(method, args) do |first, second|
-          raise "first arguent to StringLiteral#tr must be a string, not #{first.class_desc}" unless first.is_a?(StringLiteral)
-          raise "second arguent to StringLiteral#tr must be a string, not #{second.class_desc}" unless second.is_a?(StringLiteral)
+          raise "first argument to StringLiteral#tr must be a string, not #{first.class_desc}" unless first.is_a?(StringLiteral)
+          raise "second argument to StringLiteral#tr must be a string, not #{second.class_desc}" unless second.is_a?(StringLiteral)
+
           StringLiteral.new(@value.tr(first.value, second.value))
         end
       when "underscore"
@@ -910,7 +947,7 @@ module Crystal
           when StringLiteral
             key = key.value
           else
-            return NilLiteral.new
+            raise "argument to [] must be a symbol or string, not #{key.class_desc}:\n\n#{key}"
           end
 
           entry = entries.find &.key.==(key)
@@ -1986,15 +2023,18 @@ module Crystal
           case arg
           when NumberLiteral
             index = arg.to_number.to_i
-            self.args[index]? || NilLiteral.new
-          when SymbolLiteral
-            named_arg = self.named_args.try &.find do |named_arg|
-              named_arg.name == arg.value
-            end
-            named_arg.try(&.value) || NilLiteral.new
+            return self.args[index]? || NilLiteral.new
+          when SymbolLiteral then name = arg.value
+          when StringLiteral then name = arg.value
+          when MacroId       then name = arg.value
           else
-            raise "argument to 'Annotation#[]' must be integer or symbol, not #{arg.class_desc}"
+            raise "argument to [] must be a number, symbol or string, not #{arg.class_desc}:\n\n#{arg}"
           end
+
+          named_arg = self.named_args.try &.find do |named_arg|
+            named_arg.name == name
+          end
+          named_arg.try(&.value) || NilLiteral.new
         end
       else
         super

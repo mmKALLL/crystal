@@ -67,7 +67,7 @@ module Crystal::System::File
       return check_not_found_error("GetFileAttributesEx") if ret == 0
 
       if file_attributes.dwFileAttributes.bits_set? LibC::FILE_ATTRIBUTE_REPARSE_POINT
-        # Could be a symlink, retrieve it's reparse tag with FindFirstFile
+        # Could be a symlink, retrieve its reparse tag with FindFirstFile
         handle = LibC.FindFirstFileW(winpath, out find_data)
         return check_not_found_error("FindFirstFile") if handle == LibC::INVALID_HANDLE_VALUE
 
@@ -200,8 +200,8 @@ module Crystal::System::File
 
   def self.utime(access_time : ::Time, modification_time : ::Time, path : String) : Nil
     times = LibC::Utimbuf64.new
-    times.actime = access_time.epoch
-    times.modtime = modification_time.epoch
+    times.actime = access_time.to_unix
+    times.modtime = modification_time.to_unix
 
     if LibC._wutime64(to_windows_path(path), pointerof(times)) != 0
       raise Errno.new("Error setting time on file #{path.inspect}")
@@ -228,5 +228,9 @@ module Crystal::System::File
 
   private def self.to_windows_path(path : String) : LibC::LPWSTR
     path.check_no_null_byte.to_utf16.to_unsafe
+  end
+
+  private def system_fsync(flush_metadata = true) : Nil
+    raise NotImplementedError.new("File#fsync")
   end
 end

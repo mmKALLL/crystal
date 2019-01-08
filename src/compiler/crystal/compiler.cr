@@ -20,7 +20,7 @@ module Crystal
     CC = ENV["CC"]? || "cc"
     CL = "cl"
 
-    # A source to the compiler: it's filename and source code.
+    # A source to the compiler: its filename and source code.
     record Source,
       filename : String,
       code : String
@@ -83,7 +83,7 @@ module Crystal
     # one LLVM module is created for each type in a program.
     property? single_module = false
 
-    # Set to a `ProgressTracker` object which tracks compilation progress.
+    # A `ProgressTracker` object which tracks compilation progress.
     property progress_tracker = ProgressTracker.new
 
     # Target triple to use in the compilation.
@@ -625,7 +625,7 @@ module Crystal
         # old one. Generating an `.o` file is what takes most time.
         #
         # However, instead of directly generating the final `.o` file
-        # from the `.bc` file, we generate it to a termporary name (`.o.tmp`)
+        # from the `.bc` file, we generate it to a temporary name (`.o.tmp`)
         # and then we rename that file to `.o`. We do this because the compiler
         # could be interrupted while the `.o` file is being generated, leading
         # to a corrupted file that later would cause compilation issues.

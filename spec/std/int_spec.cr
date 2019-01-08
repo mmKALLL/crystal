@@ -46,6 +46,42 @@ describe "Int" do
     end
   end
 
+  describe "&**" do
+    it "with positive Int32" do
+      x = 2 &** 2
+      x.should eq(4)
+      x.should be_a(Int32)
+
+      x = 2 &** 0
+      x.should eq(1)
+      x.should be_a(Int32)
+    end
+
+    it "with UInt8" do
+      x = 2_u8 &** 2
+      x.should eq(4)
+      x.should be_a(UInt8)
+    end
+
+    it "raises with negative exponent" do
+      expect_raises(ArgumentError, "Cannot raise an integer to a negative integer power, use floats for that") do
+        2 &** -1
+      end
+    end
+
+    it "works with large integers" do
+      x = 51_i64 &** 11
+      x.should eq(6071163615208263051_i64)
+      x.should be_a(Int64)
+    end
+
+    it "wraps with larger integers" do
+      x = 51_i64 &** 12
+      x.should eq(-3965304877440961871_i64)
+      x.should be_a(Int64)
+    end
+  end
+
   describe "#===(:Char)" do
     it { (99 === 'c').should be_true }
     it { (99_u8 === 'c').should be_true }
@@ -361,6 +397,28 @@ describe "Int" do
     (-6 / -2).should eq(3)
   end
 
+  describe "floor division //" do
+    it "preserves type of lhs" do
+      {% for type in [UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64] %}
+        ({{type}}.new(7) // 2).should be_a({{type}})
+        ({{type}}.new(7) // 2.0).should be_a({{type}})
+        ({{type}}.new(7) // 2.0_f32).should be_a({{type}})
+      {% end %}
+    end
+
+    it "divides negative numbers" do
+      (7 // 2).should eq(3)
+      (-7 // 2).should eq(-4)
+      (7 // -2).should eq(-4)
+      (-7 // -2).should eq(3)
+
+      (6 // 2).should eq(3)
+      (-6 // 2).should eq(-3)
+      (6 // -2).should eq(-3)
+      (-6 // -2).should eq(3)
+    end
+  end
+
   it "tdivs" do
     5.tdiv(3).should eq(1)
     -5.tdiv(3).should eq(-1)
@@ -383,6 +441,11 @@ describe "Int" do
     (4 / 2).should eq(2)
   end
 
+  it "raises when divides by zero" do
+    expect_raises(DivisionByZeroError) { 1 // 0 }
+    (4 // 2).should eq(2)
+  end
+
   it "raises when divides Int::MIN by -1" do
     expect_raises(ArgumentError) { Int8::MIN / -1 }
     expect_raises(ArgumentError) { Int16::MIN / -1 }
@@ -390,6 +453,15 @@ describe "Int" do
     expect_raises(ArgumentError) { Int64::MIN / -1 }
 
     (UInt8::MIN / -1).should eq(0)
+  end
+
+  it "raises when divides Int::MIN by -1" do
+    expect_raises(ArgumentError) { Int8::MIN // -1 }
+    expect_raises(ArgumentError) { Int16::MIN // -1 }
+    expect_raises(ArgumentError) { Int32::MIN // -1 }
+    expect_raises(ArgumentError) { Int64::MIN // -1 }
+
+    (UInt8::MIN // -1).should eq(0)
   end
 
   it "raises when mods by zero" do

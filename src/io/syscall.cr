@@ -20,7 +20,7 @@ module IO::Syscall
     @read_timeout = timeout
   end
 
-  # Set the number of seconds to wait when reading before raising an `IO::Timeout`.
+  # Sets the number of seconds to wait when reading before raising an `IO::Timeout`.
   def read_timeout=(read_timeout : Number) : Number
     self.read_timeout = read_timeout.seconds
     read_timeout
@@ -36,7 +36,7 @@ module IO::Syscall
     @write_timeout = timeout
   end
 
-  # Set the number of seconds to wait when writing before raising an `IO::Timeout`.
+  # Sets the number of seconds to wait when writing before raising an `IO::Timeout`.
   def write_timeout=(write_timeout : Number) : Number
     self.write_timeout = write_timeout.seconds
     write_timeout
@@ -111,7 +111,7 @@ module IO::Syscall
     readers = (@readers ||= Deque(Fiber).new)
     readers << Fiber.current
     add_read_event(timeout)
-    Scheduler.reschedule
+    Crystal::Scheduler.reschedule
 
     if @read_timed_out
       @read_timed_out = false
@@ -131,7 +131,7 @@ module IO::Syscall
     writers = (@writers ||= Deque(Fiber).new)
     writers << Fiber.current
     add_write_event(timeout)
-    Scheduler.reschedule
+    Crystal::Scheduler.reschedule
 
     if @write_timed_out
       @write_timed_out = false
@@ -145,12 +145,12 @@ module IO::Syscall
 
   private def reschedule_waiting
     if readers = @readers
-      Scheduler.enqueue readers
+      Crystal::Scheduler.enqueue readers
       readers.clear
     end
 
     if writers = @writers
-      Scheduler.enqueue writers
+      Crystal::Scheduler.enqueue writers
       writers.clear
     end
   end

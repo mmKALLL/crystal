@@ -45,7 +45,7 @@ class Crystal::Call
       return recalculate_lib_call obj_type
     end
 
-    # Check if it's call inside LibFoo
+    # Check if its call is inside LibFoo
     # (can happen when assigning the call to a constant)
     if !obj && (lib_type = scope()).is_a?(LibType)
       return recalculate_lib_call lib_type
@@ -752,16 +752,16 @@ class Crystal::Call
     elsif block_arg_restriction
       # Otherwise, the block spec could be something like &block : Foo, and that
       # is valid too only if Foo is an alias/typedef that referes to a FunctionType
-      block_arg_type = lookup_node_type(match.context, block_arg_restriction).remove_typedef
-      unless block_arg_type.is_a?(ProcInstanceType)
-        block_arg_restriction.raise "expected block type to be a function type, not #{block_arg_type}"
+      block_arg_restriction_type = lookup_node_type(match.context, block_arg_restriction).remove_typedef
+      unless block_arg_restriction_type.is_a?(ProcInstanceType)
+        block_arg_restriction.raise "expected block type to be a function type, not #{block_arg_restriction_type}"
         return nil, nil
       end
 
-      yield_vars = block_arg_type.arg_types.map_with_index do |input, i|
+      yield_vars = block_arg_restriction_type.arg_types.map_with_index do |input, i|
         Var.new("var#{i}", input)
       end
-      output = block_arg_type.return_type
+      output = block_arg_restriction_type.return_type
       output_type = output
       output_type = program.nil if output_type.void?
     end

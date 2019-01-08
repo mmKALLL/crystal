@@ -101,7 +101,7 @@ class HTTP::Server
   # Returns `true` if this server is closed.
   getter? closed : Bool = false
 
-  # Returns `true` if this server is listening on it's sockets.
+  # Returns `true` if this server is listening on its sockets.
   getter? listening : Bool = false
 
   # Creates a new HTTP server with the given block as handler.
@@ -154,7 +154,7 @@ class HTTP::Server
   # If *reuse_port* is `true`, it enables the `SO_REUSEPORT` socket option,
   # which allows multiple processes to bind to the same port.
   def bind_tcp(port : Int32, reuse_port : Bool = false) : Socket::IPAddress
-    bind_tcp "127.0.0.1", port, reuse_port
+    bind_tcp Socket::IPAddress::LOOPBACK, port, reuse_port
   end
 
   # Creates a `TCPServer` listenting on *address* and adds it as a socket, returning the local address
@@ -180,7 +180,7 @@ class HTTP::Server
   # server = HTTP::Server.new { }
   # server.bind_unused_port # => Socket::IPAddress.new("127.0.0.1", 12345)
   # ```
-  def bind_unused_port(host : String = "127.0.0.1", reuse_port : Bool = false) : Socket::IPAddress
+  def bind_unused_port(host : String = Socket::IPAddress::LOOPBACK, reuse_port : Bool = false) : Socket::IPAddress
     bind_tcp host, 0, reuse_port
   end
 
@@ -221,7 +221,7 @@ class HTTP::Server
     # server.bind_tls "127.0.0.1", 8080, context
     # ```
     def bind_tls(host : String, port : Int32, context : OpenSSL::SSL::Context::Server, reuse_port : Bool = false) : Socket::IPAddress
-      tcp_server = TCPServer.new(host, port, reuse_port)
+      tcp_server = TCPServer.new(host, port, reuse_port: reuse_port)
       server = OpenSSL::SSL::Server.new(tcp_server, context)
 
       bind(server)

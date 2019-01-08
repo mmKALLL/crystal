@@ -1,5 +1,107 @@
 require "./spec_helper"
 
+CALENDAR_WEEK_TEST_DATA = [
+  { {1981, 1, 1}, {1981, 1, 4} },
+  { {1982, 1, 1}, {1981, 53, 5} },
+  { {1983, 1, 1}, {1982, 52, 6} },
+  { {1984, 1, 1}, {1983, 52, 7} },
+  { {1985, 1, 1}, {1985, 1, 2} },
+  { {1985, 4, 12}, {1985, 15, 5} },
+  { {1986, 1, 1}, {1986, 1, 3} },
+  { {1987, 1, 1}, {1987, 1, 4} },
+  { {1988, 1, 1}, {1987, 53, 5} },
+  { {1989, 1, 1}, {1988, 52, 7} },
+  { {1990, 1, 1}, {1990, 1, 1} },
+  { {1991, 1, 1}, {1991, 1, 2} },
+  { {1992, 1, 1}, {1992, 1, 3} },
+  { {1993, 1, 1}, {1992, 53, 5} },
+  { {1994, 1, 1}, {1993, 52, 6} },
+  { {1995, 1, 2}, {1995, 1, 1} },
+  { {1996, 1, 1}, {1996, 1, 1} },
+  { {1996, 1, 7}, {1996, 1, 7} },
+  { {1996, 1, 8}, {1996, 2, 1} },
+  { {1997, 1, 1}, {1997, 1, 3} },
+  { {1998, 1, 1}, {1998, 1, 4} },
+  { {1999, 1, 1}, {1998, 53, 5} },
+  { {2000, 1, 1}, {1999, 52, 6} },
+  { {2001, 1, 1}, {2001, 1, 1} },
+  { {2002, 1, 1}, {2002, 1, 2} },
+  { {2003, 1, 1}, {2003, 1, 3} },
+  { {2004, 1, 1}, {2004, 1, 4} },
+  { {2005, 1, 1}, {2004, 53, 6} },
+  { {2006, 1, 1}, {2005, 52, 7} },
+  { {2007, 1, 1}, {2007, 1, 1} },
+  { {2008, 1, 1}, {2008, 1, 2} },
+  { {2009, 1, 1}, {2009, 1, 4} },
+  { {2010, 1, 1}, {2009, 53, 5} },
+  { {2010, 1, 1}, {2009, 53, 5} },
+  { {2011, 1, 1}, {2010, 52, 6} },
+  { {2011, 1, 2}, {2010, 52, 7} },
+  { {2011, 1, 3}, {2011, 1, 1} },
+  { {2011, 1, 4}, {2011, 1, 2} },
+  { {2011, 1, 5}, {2011, 1, 3} },
+  { {2011, 1, 6}, {2011, 1, 4} },
+  { {2011, 1, 7}, {2011, 1, 5} },
+  { {2011, 1, 8}, {2011, 1, 6} },
+  { {2011, 1, 9}, {2011, 1, 7} },
+  { {2011, 1, 10}, {2011, 2, 1} },
+  { {2011, 1, 11}, {2011, 2, 2} },
+  { {2011, 6, 12}, {2011, 23, 7} },
+  { {2011, 6, 13}, {2011, 24, 1} },
+  { {2011, 12, 25}, {2011, 51, 7} },
+  { {2011, 12, 26}, {2011, 52, 1} },
+  { {2011, 12, 27}, {2011, 52, 2} },
+  { {2011, 12, 28}, {2011, 52, 3} },
+  { {2011, 12, 29}, {2011, 52, 4} },
+  { {2011, 12, 30}, {2011, 52, 5} },
+  { {2011, 12, 31}, {2011, 52, 6} },
+  { {1995, 1, 1}, {1994, 52, 7} },
+  { {2012, 1, 1}, {2011, 52, 7} },
+  { {2012, 1, 2}, {2012, 1, 1} },
+  { {2012, 1, 8}, {2012, 1, 7} },
+  { {2012, 1, 9}, {2012, 2, 1} },
+  { {2012, 12, 23}, {2012, 51, 7} },
+  { {2012, 12, 24}, {2012, 52, 1} },
+  { {2012, 12, 30}, {2012, 52, 7} },
+  { {2012, 12, 31}, {2013, 1, 1} },
+  { {2013, 1, 1}, {2013, 1, 2} },
+  { {2013, 1, 6}, {2013, 1, 7} },
+  { {2013, 1, 7}, {2013, 2, 1} },
+  { {2013, 12, 22}, {2013, 51, 7} },
+  { {2013, 12, 23}, {2013, 52, 1} },
+  { {2013, 12, 29}, {2013, 52, 7} },
+  { {2013, 12, 30}, {2014, 1, 1} },
+  { {2014, 1, 1}, {2014, 1, 3} },
+  { {2014, 1, 5}, {2014, 1, 7} },
+  { {2014, 1, 6}, {2014, 2, 1} },
+  { {2015, 1, 1}, {2015, 1, 4} },
+  { {2016, 1, 1}, {2015, 53, 5} },
+  { {2017, 1, 1}, {2016, 52, 7} },
+  { {2018, 1, 1}, {2018, 1, 1} },
+  { {2019, 1, 1}, {2019, 1, 2} },
+  { {2020, 1, 1}, {2020, 1, 3} },
+  { {2021, 1, 1}, {2020, 53, 5} },
+  { {2022, 1, 1}, {2021, 52, 6} },
+  { {2023, 1, 1}, {2022, 52, 7} },
+  { {2024, 1, 1}, {2024, 1, 1} },
+  { {2025, 1, 1}, {2025, 1, 3} },
+  { {2026, 1, 1}, {2026, 1, 4} },
+  { {2027, 1, 1}, {2026, 53, 5} },
+  { {2028, 1, 1}, {2027, 52, 6} },
+  { {2029, 1, 1}, {2029, 1, 1} },
+  { {2030, 1, 1}, {2030, 1, 2} },
+  { {2031, 1, 1}, {2031, 1, 3} },
+  { {2032, 1, 1}, {2032, 1, 4} },
+  { {2033, 1, 1}, {2032, 53, 6} },
+  { {2034, 1, 1}, {2033, 52, 7} },
+  { {2035, 1, 1}, {2035, 1, 1} },
+  { {2036, 1, 1}, {2036, 1, 2} },
+  { {2037, 1, 1}, {2037, 1, 4} },
+  { {2038, 1, 1}, {2037, 53, 5} },
+  { {2039, 1, 1}, {2038, 52, 6} },
+  { {2040, 1, 1}, {2039, 52, 7} },
+]
+
 describe Time do
   describe ".new" do
     it "initializes" do
@@ -68,19 +170,19 @@ describe Time do
     end
   end
 
-  it ".epoch" do
+  it ".unix" do
     seconds = 1439404155
-    time = Time.epoch(seconds)
+    time = Time.unix(seconds)
     time.should eq(Time.utc(2015, 8, 12, 18, 29, 15))
-    time.epoch.should eq(seconds)
+    time.to_unix.should eq(seconds)
     time.utc?.should be_true
   end
 
-  it ".epoch_ms" do
+  it ".unix_ms" do
     milliseconds = 1439404155000
-    time = Time.epoch_ms(milliseconds)
+    time = Time.unix_ms(milliseconds)
     time.should eq(Time.utc(2015, 8, 12, 18, 29, 15))
-    time.epoch_ms.should eq(milliseconds)
+    time.to_unix_ms.should eq(milliseconds)
     time.utc?.should be_true
   end
 
@@ -281,9 +383,17 @@ describe Time do
     t.time_of_day.should eq(Time::Span.new(21, 18, 13))
   end
 
-  it "#day_of_week" do
-    t = Time.new 2014, 10, 30, 21, 18, 13
-    t.day_of_week.should eq(Time::DayOfWeek::Thursday)
+  describe "#day_of_week" do
+    it "gets day of week" do
+      t = Time.new 2014, 10, 30, 21, 18, 13
+      t.day_of_week.should eq(Time::DayOfWeek::Thursday)
+    end
+
+    CALENDAR_WEEK_TEST_DATA.each do |date, week_date|
+      it "#{date.join('-')} is #{week_date[2]}" do
+        Time.utc(*date).day_of_week.should eq Time::DayOfWeek.from_value(week_date[2])
+      end
+    end
   end
 
   it "answers day name predicates" do
@@ -296,6 +406,14 @@ describe Time do
       time.thursday?.should eq(i == 4)
       time.friday?.should eq(i == 5)
       time.saturday?.should eq(i == 6)
+    end
+  end
+
+  describe "#calendar_week" do
+    CALENDAR_WEEK_TEST_DATA.each do |date, week_date|
+      it "#{date.join('-')} to #{week_date[0]}-#{week_date[1]}" do
+        Time.utc(*date).calendar_week.should eq({week_date[0], week_date[1]})
+      end
     end
   end
 
@@ -320,17 +438,17 @@ describe Time do
     end
   end
 
-  describe "#epoch" do
-    it "gets unix epoch seconds" do
+  describe "#to_unix" do
+    it "gets unix seconds" do
       t1 = Time.utc 2014, 10, 30, 21, 18, 13, nanosecond: 0
-      t1.epoch.should eq(1414703893)
-      t1.epoch_f.should be_close(1414703893, 1e-01)
+      t1.to_unix.should eq(1414703893)
+      t1.to_unix_f.should be_close(1414703893, 1e-01)
     end
 
-    it "gets unix epoch seconds at GMT" do
+    it "gets unix seconds at GMT" do
       t1 = Time.now
-      t1.epoch.should eq(t1.to_utc.epoch)
-      t1.epoch_f.should be_close(t1.to_utc.epoch_f, 1e-01)
+      t1.to_unix.should eq(t1.to_utc.to_unix)
+      t1.to_unix_f.should be_close(t1.to_utc.to_unix_f, 1e-01)
     end
   end
 
@@ -589,6 +707,68 @@ describe Time do
     it "knows years *not* divisible by 4 are normal" do
       {1965, 1999, 2001, 2018, 2019, 2021, 2099, 2101}.each do |year|
         Time.leap_year?(year).should be_false
+      end
+    end
+  end
+
+  describe Time::DayOfWeek do
+    it "#value" do
+      Time::DayOfWeek::Monday.value.should eq 1
+      Time::DayOfWeek::Tuesday.value.should eq 2
+      Time::DayOfWeek::Wednesday.value.should eq 3
+      Time::DayOfWeek::Thursday.value.should eq 4
+      Time::DayOfWeek::Friday.value.should eq 5
+      Time::DayOfWeek::Saturday.value.should eq 6
+      Time::DayOfWeek::Sunday.value.should eq 7
+    end
+
+    it ".from_value" do
+      Time::DayOfWeek.from_value(1).should eq Time::DayOfWeek::Monday
+      Time::DayOfWeek.from_value(2).should eq Time::DayOfWeek::Tuesday
+      Time::DayOfWeek.from_value(3).should eq Time::DayOfWeek::Wednesday
+      Time::DayOfWeek.from_value(4).should eq Time::DayOfWeek::Thursday
+      Time::DayOfWeek.from_value(5).should eq Time::DayOfWeek::Friday
+      Time::DayOfWeek.from_value(6).should eq Time::DayOfWeek::Saturday
+      Time::DayOfWeek.from_value(7).should eq Time::DayOfWeek::Sunday
+
+      # Special case: Identify 0 as Sunday
+      Time::DayOfWeek.from_value(0).should eq Time::DayOfWeek::Sunday
+
+      expect_raises(Exception, "Unknown enum Time::DayOfWeek value: 8") do
+        Time::DayOfWeek.from_value(8)
+      end
+    end
+
+    it ".new does not identify 0 as Sunday" do
+      Time::DayOfWeek.new(0).should_not eq Time::DayOfWeek::Sunday
+    end
+  end
+
+  describe ".week_date" do
+    describe "verify test data" do
+      with_zoneinfo do
+        location = Time::Location.load("Europe/Berlin")
+
+        CALENDAR_WEEK_TEST_DATA.each do |date, week_date|
+          it "W#{week_date.join('-')} eq #{date.join('-')}" do
+            Time.week_date(*week_date, location: Time::Location::UTC).should eq(Time.utc(*date))
+            Time.week_date(week_date[0], week_date[1], Time::DayOfWeek.from_value(week_date[2]), location: Time::Location::UTC).should eq(Time.utc(*date))
+            Time.week_date(*week_date).should eq(Time.new(*date))
+            Time.week_date(*week_date, location: location).should eq(Time.new(*date, location: location))
+          end
+        end
+      end
+    end
+
+    it "accepts time arguments" do
+      with_zoneinfo do
+        location = Time::Location.load("Europe/Berlin")
+        Time.week_date(*CALENDAR_WEEK_TEST_DATA[0][1], 11, 57, 32, nanosecond: 123_567, location: location).should eq(
+          Time.new(*CALENDAR_WEEK_TEST_DATA[0][0], 11, 57, 32, nanosecond: 123_567, location: location))
+
+        location = Time::Location.load("America/Buenos_Aires")
+        Time.week_date(*CALENDAR_WEEK_TEST_DATA[0][1], 11, 57, 32, nanosecond: 123_567, location: location).should eq(
+          Time.new(*CALENDAR_WEEK_TEST_DATA[0][0], 11, 57, 32, nanosecond: 123_567, location: location))
       end
     end
   end

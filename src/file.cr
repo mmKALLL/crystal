@@ -119,7 +119,7 @@ class File < IO::FileDescriptor
   # File.info("bar", follow_symlinks: false).type.symlink? # => true
   # ```
   def self.info(path, follow_symlinks = true) : Info
-    info?(path, follow_symlinks) || raise Errno.new("Unable to get info for #{path.inspect}")
+    info?(path, follow_symlinks) || raise Errno.new("Unable to get info for '#{path.inspect_unquoted}'")
   end
 
   # Returns `true` if *path* exists else returns `false`
@@ -151,7 +151,7 @@ class File < IO::FileDescriptor
   def self.size(filename) : UInt64
     info(filename).size
   rescue ex : Errno
-    raise Errno.new("Error determining size of #{filename.inspect}", ex.errno)
+    raise Errno.new("Error determining size of '#{filename.inspect_unquoted}'", ex.errno)
   end
 
   # Returns `true` if the file at *path* is empty, otherwise returns `false`.
@@ -315,7 +315,7 @@ class File < IO::FileDescriptor
     Crystal::System::File.chmod(path, permissions)
   end
 
-  # Delete the file at *path*. Deleting non-existent file will raise an exception.
+  # Deletes the file at *path*. Deleting non-existent file will raise an exception.
   #
   # ```
   # File.write("foo", "")
@@ -340,7 +340,7 @@ class File < IO::FileDescriptor
 
     current = bytes.size - 1
 
-    # if the pattern is foo. it has no extension
+    # if the pattern is foo, it has no extension
     return "" if bytes[current] == '.'.ord
 
     # position the reader at the last . or SEPARATOR
@@ -351,7 +351,7 @@ class File < IO::FileDescriptor
       current -= 1
     end
 
-    # if we are the beginning of the string there is no extension
+    # if we are at the beginning of the string, there is no extension.
     # /foo or .foo have no extension
     return "" unless current > 0
 
@@ -360,7 +360,7 @@ class File < IO::FileDescriptor
     return "" if bytes[current] == SEPARATOR.ord
 
     # otherwise the current_char is '.'
-    # if previous is '/', then the pattern is prefix/.foo  and has no extension
+    # if previous is '/', then the pattern is prefix/.foo and has no extension
     return "" if bytes[current - 1] == SEPARATOR.ord
 
     # So the current char is '.',
@@ -720,7 +720,7 @@ class File < IO::FileDescriptor
     lines
   end
 
-  # Write the given *content* to *filename*.
+  # Writes the given *content* to *filename*.
   #
   # The *mode* parameter can be used to change the file's `open` mode, e.g. to `"a"` for appending.
   #
@@ -821,12 +821,12 @@ class File < IO::FileDescriptor
   # in the *filename* parameter to the value given in *time*.
   #
   # If the file does not exist, it will be created.
-  def self.touch(filename : String, time : Time = Time.now)
+  def self.touch(filename : String, time : Time = Time.utc_now)
     open(filename, "a") { } unless exists?(filename)
     utime time, time, filename
   end
 
-  # Return the size in bytes of the currently opened file.
+  # Returns the size in bytes of the currently opened file.
   def size
     info.size
   end
@@ -836,6 +836,19 @@ class File < IO::FileDescriptor
   def truncate(size = 0) : Nil
     flush
     system_truncate(size)
+  end
+
+  # Flushes all data written to this File to the disk device so that
+  # all changed information can be retrieved even if the system
+  # crashes or is rebooted. The call blocks until the device reports that
+  # the transfer has completed.
+  # To reduce disk activity the *flush_metadata* parameter can be set to false,
+  # then the syscall *fdatasync* will be used and only data required for
+  # subsequent data retrieval is flushed. Metadata such as modified time and
+  # access time is not written.
+  def fsync(flush_metadata = true) : Nil
+    flush
+    system_fsync(flush_metadata)
   end
 
   # Yields an `IO` to read a section inside this file.
@@ -878,7 +891,7 @@ class File < IO::FileDescriptor
     end
   end
 
-  # Place a shared advisory lock. More than one process may hold a shared lock for a given file at a given time.
+  # Places a shared advisory lock. More than one process may hold a shared lock for a given file at a given time.
   # `Errno::EWOULDBLOCK` is raised if *blocking* is set to `false` and an existing exclusive lock is set.
   def flock_shared(blocking = true)
     system_flock_shared(blocking)
@@ -893,13 +906,13 @@ class File < IO::FileDescriptor
     end
   end
 
-  # Place an exclusive advisory lock. Only one process may hold an exclusive lock for a given file at a given time.
+  # Places an exclusive advisory lock. Only one process may hold an exclusive lock for a given file at a given time.
   # `Errno::EWOULDBLOCK` is raised if *blocking* is set to `false` and any existing lock is set.
   def flock_exclusive(blocking = true)
     system_flock_exclusive(blocking)
   end
 
-  # Remove an existing advisory lock held by this process.
+  # Removes an existing advisory lock held by this process.
   def flock_unlock
     system_flock_unlock
   end
